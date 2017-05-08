@@ -1,0 +1,7 @@
+string[] joint_names
+float64[] init_q
+float64[] dest_q
+
+string[] active_joints
+---
+
