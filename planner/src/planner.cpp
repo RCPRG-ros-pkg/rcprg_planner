@@ -36,6 +36,20 @@
 #include <tf/transform_broadcaster.h>
 #include <interactive_markers/interactive_marker_server.h>
 
+// MoveIt!
+#include <moveit/robot_model_loader/robot_model_loader.h>
+#include <moveit/planning_scene/planning_scene.h>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+#include <moveit/planning_pipeline/planning_pipeline.h>
+#include <moveit_msgs/GetMotionPlan.h>
+
+//TODO: remove this
+//#include <moveit/collision_detection_fcl/collision_robot_fcl.h>
+
+#include <moveit/kinematic_constraints/utils.h>
+#include <eigen_conversions/eigen_msg.h>
+#include <eigen_conversions/eigen_kdl.h>
+
 #include <string>
 #include <stdlib.h>
 #include <stdio.h>
@@ -43,7 +57,7 @@
 #include "Eigen/Dense"
 #include "Eigen/LU"
 
-#include <ompl/base/spaces/RealVectorStateSpace.h>
+/*#include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <ompl/base/SpaceInformation.h>
 #include <ompl/base/State.h>
 #include <ompl/base/ScopedState.h>
@@ -53,22 +67,22 @@
 #include <ompl/geometric/planners/rrt/RRTstar.h>
 #include <ompl/geometric/planners/rrt/RRTConnect.h>
 #include <ompl/geometric/planners/rrt/LBTRRT.h>
-
-//#include "velma_dyn_model.h"
+*/
 #include <collision_convex_model/collision_convex_model.h>
 #include "kin_model/kin_model.h"
 #include "planer_utils/marker_publisher.h"
 #include "planer_utils/random_uniform.h"
 #include "planer_utils/utilities.h"
+#include "planer_utils/double_joint_collision_checker.h"
 #include "std_srvs/Trigger.h"
 #include "planner_msgs/Plan.h"
-//#include "planer_utils/velma_q5q6_collision.h"
 
 class Planner {
 private:
     ros::NodeHandle nh_;
     ros::Publisher joint_state_pub_;
     ros::ServiceServer service_reset_;
+    ros::ServiceServer service_plan_;
 
     MarkerPublisher markers_pub_;
     tf::TransformBroadcaster br;
@@ -84,17 +98,66 @@ private:
     boost::shared_ptr<KinematicModel > kin_model_;
     std::vector<KDL::Frame > links_fk_;
 
+
+//    robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
+//    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
+
+    robot_model::RobotModelPtr robot_model_;
+    planning_scene::PlanningScenePtr planning_scene_;
+    planning_pipeline::PlanningPipelinePtr planning_pipeline_;
+
+    // ROS parameters
+    std::vector<double > wcc_l_constraint_polygon_;
+    int wcc_l_joint0_idx_;
+    int wcc_l_joint1_idx_;
+
+    std::vector<double > wcc_r_constraint_polygon_;
+    int wcc_r_joint0_idx_;
+    int wcc_r_joint1_idx_;
+
+
+    boost::shared_ptr<DoubleJointCC > wcc_l_;
+    boost::shared_ptr<DoubleJointCC > wcc_r_;
+
 public:
     Planner() :
-        nh_(),
+        nh_("planner"),
         PI(3.141592653589793),
         markers_pub_(nh_)
     {
         joint_state_pub_ = nh_.advertise<sensor_msgs::JointState>("/joint_states", 10);
         service_reset_ = nh_.advertiseService("reset", &Planner::reset, this);
+        service_plan_ = nh_.advertiseService("plan", &Planner::plan, this);
 
         nh_.getParam("/robot_description", robot_description_str_);
         nh_.getParam("/robot_semantic_description", robot_semantic_description_str_);
+
+        nh_.getParam("/velma_core_cs/wcc_l/constraint_polygon", wcc_l_constraint_polygon_);
+        nh_.getParam("/velma_core_cs/wcc_l/joint0_idx", wcc_l_joint0_idx_);
+        nh_.getParam("/velma_core_cs/wcc_l/joint1_idx", wcc_l_joint1_idx_);
+
+        nh_.getParam("/velma_core_cs/wcc_r/constraint_polygon", wcc_r_constraint_polygon_);
+        nh_.getParam("/velma_core_cs/wcc_r/joint0_idx", wcc_r_joint0_idx_);
+        nh_.getParam("/velma_core_cs/wcc_r/joint1_idx", wcc_r_joint1_idx_);
+
+        if (wcc_l_constraint_polygon_.size() == 0 || (wcc_l_constraint_polygon_.size()%2) != 0) {
+            ROS_ERROR("property \'constraint_polygon\' (l) has wrong size: %lu", wcc_l_constraint_polygon_.size());
+        }
+
+        if (wcc_l_joint0_idx_ == wcc_l_joint1_idx_) {
+            ROS_ERROR("properties \'joint0_idx\' and \'joint1_idx\' (l) have the same value: %d", wcc_l_joint0_idx_);
+        }
+
+        if (wcc_r_constraint_polygon_.size() == 0 || (wcc_r_constraint_polygon_.size()%2) != 0) {
+            ROS_ERROR("property \'constraint_polygon\' (r) has wrong size: %lu", wcc_r_constraint_polygon_.size());
+        }
+
+        if (wcc_r_joint0_idx_ == wcc_r_joint1_idx_) {
+            ROS_ERROR("properties \'joint0_idx\' and \'joint1_idx\' (r) have the same value: %d", wcc_r_joint0_idx_);
+        }
+
+        wcc_l_.reset(new DoubleJointCC(0.0, wcc_l_constraint_polygon_));
+        wcc_r_.reset(new DoubleJointCC(0.0, wcc_r_constraint_polygon_));
 
         //
         // collision model
@@ -103,6 +166,27 @@ public:
 	    col_model_->parseSRDF(robot_semantic_description_str_);
         col_model_->generateCollisionPairs();
         links_fk_.resize(col_model_->getLinksCount());
+
+        std::string xml_out = robot_description_str_;
+        self_collision::CollisionModel::convertSelfCollisionsInURDF(robot_description_str_, xml_out);
+//        std::cout << xml_out << std::endl;
+
+        //
+        // moveit
+        //
+        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(xml_out, robot_semantic_description_str_) );
+        robot_model_ = robot_model_loader.getModel();
+
+        planning_scene_.reset( new planning_scene::PlanningScene(robot_model_) );
+
+        planning_scene_->setStateFeasibilityPredicate( boost::bind(&Planner::isStateValid, this, _1, _2) );
+
+        planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
+
+//        robot_model_loader_.reset( new robot_model_loader::RobotModelLoader(robot_model_loader::RobotModelLoader::Options(robot_description_str_, robot_semantic_description_str_)) );
+//        planning_scene_monitor_.reset( new planning_scene_monitor::PlanningSceneMonitor(robot_model_loader_) );
+//        planning_scene_monitor_->getRobotModel();
+
     }
 
     ~Planner() {
@@ -113,104 +197,38 @@ public:
         return true;
     }
 
-    bool plan(planner_msgs::Plan::Request& req, planner_msgs::Plan::Response& res) {
-        //
-        // kinematic model
-        //
-        kin_model_.reset( new KinematicModel(robot_description_str_, req.active_joints) );
-        //kin_model_->setIgnoredJointValue("torso_1_joint", -90.0/180.0*PI);
-        Eigen::VectorXd ign_q;
-        std::vector<std::string > ign_joint_names;
-        kin_model_->getIgnoredJoints(ign_q, ign_joint_names);
+    bool plan(moveit_msgs::GetMotionPlan::Request& req, moveit_msgs::GetMotionPlan::Response& res) {
+//    bool plan(planner_msgs::Plan::Request& req, planner_msgs::Plan::Response& res) {
 
-        for (int i = 0; i < ign_joint_names.size(); ++i) {
-            for (int j = 0; j < req.joint_names.size(); ++j) {
-                if (req.joint_names[j] == ign_joint_names[i]) {
-                    kin_model_->setIgnoredJointValue(ign_joint_names[i], ign_q[i]);
-                    break;
-                }
-            }
-        }
+        planning_interface::MotionPlanResponse response;
 
-        int ndof = req.active_joints.size();
+        planning_interface::MotionPlanRequest request = req.motion_plan_request;
 
-        // joint limits
-        Eigen::VectorXd lower_limit(ndof), upper_limit(ndof);
-        int q_idx = 0;
-        for (int q_idx = 0; q_idx < req.active_joints.size(); ++q_idx) {
-            lower_limit[q_idx] = kin_model_->getLowerLimit(q_idx);
-            upper_limit[q_idx] = kin_model_->getUpperLimit(q_idx);
-        }
+        planning_pipeline_->generatePlan(planning_scene_, request, response);
 
-        //
-        // ompl
-        //
-        ompl::base::StateSpacePtr space(new ompl::base::RealVectorStateSpace(ndof));
-        ompl::base::RealVectorBounds bounds(ndof);
+        response.getMessage( res.motion_plan_response );
 
-        for (int q_idx = 0; q_idx < ndof; q_idx++) {
-            bounds.setLow(q_idx, lower_limit(q_idx));
-            bounds.setHigh(q_idx, upper_limit(q_idx));
-        }
-        space->as<ompl::base::RealVectorStateSpace>()->setBounds(bounds);
-
-        ompl::base::SpaceInformationPtr si(new ompl::base::SpaceInformation(space));
-        si->setStateValidityChecker( boost::bind(&Planner::isStateValid, this, _1) );
-        si->setStateValidityCheckingResolution(1.0/180.0*PI);
-        si->setup();
-
-        ompl::base::ProblemDefinitionPtr pdef(new ompl::base::ProblemDefinition(si));
-        pdef->clearStartStates();
-
-        ompl::base::ScopedState<> start(space);
-        ompl::base::ScopedState<> goal(space);
-
-        for (int i = 0; i < ndof; ++i) {
-            int q_idx = kin_model_->getJointIndex(req.active_joints[i]);
-            start[q_idx] = req.init_q[q_idx];
-            goal[q_idx] = req.dest_q[q_idx];
-        }
-
-        pdef->setStartAndGoalStates(start, goal);
-
-//        ompl::base::PlannerPtr planner(new ompl::geometric::LBTRRT(si));
-//        ompl::base::PlannerPtr planner(new ompl::geometric::RRTstar(si));
-        ompl::base::PlannerPtr planner(new ompl::geometric::RRTConnect(si));
-        planner->setProblemDefinition(pdef);
-        planner->setup();
-
-        ompl::base::PlannerStatus status = planner->solve(10.0);
-
-        if (status) {
-            // get rrt path
-            ompl::base::PathPtr path = pdef->getSolutionPath();
-//            std::cout << "path length: " << path->length() << std::endl;
-//            boost::shared_ptr<ompl::geometric::PathGeometric > ppath = boost::static_pointer_cast<ompl::geometric::PathGeometric >(path);
+        /* Check that the planning was successful */
+        if (response.error_code_.val != response.error_code_.SUCCESS)
+        {
+          ROS_ERROR("Could not compute plan successfully");
+          return false;
         }
 
         return true;
     }
 
-    bool isStateValid(const ompl::base::State *s) {
-// TODO:
-/*
-        Eigen::VectorXd x(ndof);
-        stateOmplToEigen(s, x, ndof);
-
-        // check collision in wrists
-//        if (wcc1.inCollision(x) || wcc2.inCollision(x)) {
-//            return false;
-//        }
-
-        std::vector<self_collision::CollisionInfo> link_collisions;
-        // calculate forward kinematics for all links
-        for (int l_idx = 0; l_idx < col_model->getLinksCount(); l_idx++) {
-            kin_model_->calculateFk(links_fk[l_idx], col_model->getLinkName(l_idx), x);
+    bool isStateValid(const robot_state::RobotState& ss, bool verbose) {
+        DoubleJointCC::Joints q_r(ss.getVariablePosition("right_arm_5_joint"), ss.getVariablePosition("right_arm_6_joint"));
+        if ( wcc_r_->inCollision(q_r) ) {
+            return false;
         }
 
-        std::set<int> excluded_link_idx;
-        return !self_collision::checkCollision(col_model_, links_fk, excluded_link_idx);
-*/
+        DoubleJointCC::Joints q_l(ss.getVariablePosition("left_arm_5_joint"), ss.getVariablePosition("left_arm_6_joint"));
+        if ( wcc_l_->inCollision(q_l) ) {
+            return false;
+        }
+
         return true;
     }
 
@@ -220,12 +238,12 @@ public:
         }
     }
 
-    void stateOmplToEigen(const ompl::base::State *s, Eigen::VectorXd &x, int ndof) {
+/*    void stateOmplToEigen(const ompl::base::State *s, Eigen::VectorXd &x, int ndof) {
         for (int q_idx = 0; q_idx < ndof; q_idx++) {
             x(q_idx) = s->as<ompl::base::RealVectorStateSpace::StateType >()->operator[](q_idx);
         }
     }
-
+*/
 /*
     void generatePossiblePose(KDL::Frame &T_B_E, Eigen::VectorXd &q, int ndof, const std::string &effector_name, const boost::shared_ptr<self_collision::CollisionModel> &col_model, const boost::shared_ptr<KinematicModel> &kin_model, const std::set<int> &excluded_q_ids=std::set<int>()) {
         while (true) {

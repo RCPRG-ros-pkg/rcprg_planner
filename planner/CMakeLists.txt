@@ -2,8 +2,22 @@ cmake_minimum_required(VERSION 2.8)
 project(planner)
 
 find_package(catkin REQUIRED COMPONENTS
-  rtt_ros rtt_rosclock std_msgs interactive_markers tf eigen_conversions cmake_modules collision_convex_model kin_dyn_model planer_utils octomap_msgs planner_msgs
-  )
+  rtt_ros
+  rtt_rosclock
+  std_msgs
+  interactive_markers
+  tf
+  eigen_conversions
+  cmake_modules
+  collision_convex_model
+  kin_dyn_model
+  planer_utils
+  octomap_msgs
+  planner_msgs
+  moveit_core
+  moveit_ros_planning
+  moveit_ros_planning_interface
+)
 
 find_package(Eigen REQUIRED)
 find_package(orocos_kdl REQUIRED)
