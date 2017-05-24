@@ -52,6 +52,18 @@ import rospy
 from moveit_msgs.msg import *
 from moveit_msgs.srv import *
 
+def qMapToConstraints(q_map, tolerance=0.01):
+    result = Constraints()
+    for joint_name in q_map:
+        constraint = JointConstraint()
+        constraint.joint_name = joint_name
+        constraint.position = q_map[ joint_name ]
+        constraint.tolerance_above = tolerance
+        constraint.tolerance_below = tolerance
+        constraint.weight = 1.0
+        result.joint_constraints.append( constraint )
+    return result
+
 class Planner:
     """
 Class used as planner interface.
