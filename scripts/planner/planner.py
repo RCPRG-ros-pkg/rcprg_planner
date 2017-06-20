@@ -24,30 +24,6 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import rospy
-#import tf
-
-#import geometry_msgs.msg
-#from std_msgs.msg import *
-#from geometry_msgs.msg import *
-#from sensor_msgs.msg import *
-#from visualization_msgs.msg import *
-#from trajectory_msgs.msg import *
-#from control_msgs.msg import *
-
-#import tf
-#from tf import *
-#from tf.transformations import * 
-#import tf_conversions.posemath as pm
-#from tf2_msgs.msg import *
-#import controller_manager_msgs.srv
-
-
-#import PyKDL
-#import math
-#from numpy import *
-#import numpy as np
-
-#import copy
 
 from moveit_msgs.msg import *
 from moveit_msgs.srv import *
