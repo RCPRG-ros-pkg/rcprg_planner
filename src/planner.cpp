@@ -219,6 +219,7 @@ public:
     void spin() {
         while (ros::ok()) {
             ros::spinOnce();
+            ros::Duration(0.1).sleep();
         }
     }
 };
