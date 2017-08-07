@@ -104,13 +104,18 @@ Class used as planner interface.
             traj[3].append( (point.time_from_start - time_prev).to_sec() )
             time_prev = point.time_from_start
 
+        if len(traj[0]) > self.max_traj_len:
+            return None, None
         return traj, res.trajectory.joint_trajectory.joint_names
 
-    def __init__(self):
-        rospy.wait_for_service('/planner/plan')
+    def __init__(self, max_traj_len):
+        self.max_traj_len = max_traj_len
 
+    def waitForInit(self, timeout_s=None):
         try:
+            rospy.wait_for_service('/planner/plan', timeout=timeout_s)
             self.plan_service = rospy.ServiceProxy('/planner/plan', GetMotionPlan)
-        except rospy.ServiceException, e:
-            print "Service call failed: %s"%e
+        except:
+            return False
+        return True
 
