@@ -42,6 +42,7 @@
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 #include <moveit/planning_pipeline/planning_pipeline.h>
 #include <moveit_msgs/GetMotionPlan.h>
+#include <moveit_msgs/ApplyPlanningScene.h>
 
 #include <moveit/kinematic_constraints/utils.h>
 #include <eigen_conversions/eigen_msg.h>
@@ -68,6 +69,7 @@ private:
     ros::Publisher joint_state_pub_;
     ros::ServiceServer service_reset_;
     ros::ServiceServer service_plan_;
+    ros::ServiceServer service_processWorld_;
 
     MarkerPublisher markers_pub_;
     tf::TransformBroadcaster br;
@@ -113,6 +115,7 @@ public:
         joint_state_pub_ = nh_.advertise<sensor_msgs::JointState>("/joint_states", 10);
         service_reset_ = nh_.advertiseService("reset", &Planner::reset, this);
         service_plan_ = nh_.advertiseService("plan", &Planner::plan, this);
+        service_processWorld_ = nh_.advertiseService("processWorld", &Planner::processWorld, this);
 
         nh_.getParam("/robot_description", robot_description_str_);
         nh_.getParam("/robot_semantic_description", robot_semantic_description_str_);
@@ -182,6 +185,15 @@ public:
         return true;
     }
 
+    bool processWorld(moveit_msgs::ApplyPlanningScene::Request& req, moveit_msgs::ApplyPlanningScene::Response& res) {
+        if (!planning_scene_->processPlanningSceneWorldMsg(req.scene.world)) {
+          ROS_ERROR("Error in processPlanningSceneWorldMsg");
+          res.success = false;
+        }
+        res.success = true;
+        return true;
+    }
+
     bool plan(moveit_msgs::GetMotionPlan::Request& req, moveit_msgs::GetMotionPlan::Response& res) {
 
         planning_interface::MotionPlanResponse response;
@@ -195,7 +207,7 @@ public:
         /* Check that the planning was successful */
         if (response.error_code_.val != response.error_code_.SUCCESS)
         {
-          ROS_ERROR("Could not compute plan successfully");
+          ROS_ERROR("Could not compute plan successfully, error: %d. For more detailed error description please refer to moveit_msgs/MoveItErrorCodes", response.error_code_.val);
           return false;
         }
 
