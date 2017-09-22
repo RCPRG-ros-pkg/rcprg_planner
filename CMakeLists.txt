@@ -26,7 +26,7 @@ catkin_package(
     CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
 )
 
-#catkin_python_setup()
+catkin_python_setup()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
@@ -47,7 +47,4 @@ install(TARGETS planner
 install(DIRECTORY launch/
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
   )
-
-catkin_install_python(PROGRAMS scripts/planner.py
-DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
