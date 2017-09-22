@@ -22,7 +22,11 @@ find_package(Eigen3 REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(octomap REQUIRED)
 
-catkin_python_setup()
+catkin_package(
+    CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
+)
+
+#catkin_python_setup()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
@@ -34,7 +38,16 @@ add_executable(planner src/planner.cpp)
 
 target_link_libraries(planner ${catkin_LIBRARIES})
 
-catkin_package(
-    CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
+install(TARGETS planner
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+  )
+
+catkin_install_python(PROGRAMS scripts/planner.py
+DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
