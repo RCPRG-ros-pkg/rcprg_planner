@@ -27,6 +27,7 @@ import rospy
 
 from moveit_msgs.msg import *
 from moveit_msgs.srv import *
+from octomap_msgs.msg import OctomapWithPose
 
 def qMapToConstraints(q_map, tolerance=0.01):
     result = Constraints()
@@ -108,6 +109,26 @@ Class used as planner interface.
             return None, None
         return traj, res.trajectory.joint_trajectory.joint_names
 
+    def processWorld(self, octomap):
+        req = ApplyPlanningSceneRequest()
+        #TODO: req.scene.name
+        #TODO: req.scene.robot_state
+        #TODO: req.scene.robot_model_name
+        #TODO: req.scene.fixed_frame_transforms
+        #TODO: req.scene.allowed_collision_matrix
+        #TODO: req.scene.link_padding
+        #TODO: req.scene.link_scale
+        #TODO: req.scene.object_colors
+        #TODO: req.scene.world.collision_objects
+
+        req.scene.world.octomap.header.frame_id = "world"
+        req.scene.world.octomap.octomap = octomap
+        req.scene.is_diff = False
+        res = self.processWorld_service(req)
+        if not res.success:
+            return False
+        return True
+
     def __init__(self, max_traj_len):
         self.max_traj_len = max_traj_len
 
@@ -115,6 +136,12 @@ Class used as planner interface.
         try:
             rospy.wait_for_service('/planner/plan', timeout=timeout_s)
             self.plan_service = rospy.ServiceProxy('/planner/plan', GetMotionPlan)
+        except:
+            return False
+
+        try:
+            rospy.wait_for_service('/planner/processWorld', timeout=timeout_s)
+            self.processWorld_service = rospy.ServiceProxy('/planner/processWorld', ApplyPlanningScene)
         except:
             return False
         return True
