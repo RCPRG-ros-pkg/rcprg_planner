@@ -43,6 +43,7 @@
 #include <moveit/planning_pipeline/planning_pipeline.h>
 #include <moveit_msgs/GetMotionPlan.h>
 #include <moveit_msgs/ApplyPlanningScene.h>
+#include <moveit/robot_state/conversions.h>
 
 #include <moveit/kinematic_constraints/utils.h>
 #include <eigen_conversions/eigen_msg.h>
@@ -207,6 +208,32 @@ public:
         /* Check that the planning was successful */
         if (response.error_code_.val != response.error_code_.SUCCESS)
         {
+/*
+            // for debug only:
+            // get the specified start state
+            robot_state::RobotState start_state = planning_scene_->getCurrentState();
+            robot_state::robotStateMsgToRobotState(planning_scene_->getTransforms(), request.start_state, start_state);
+
+            collision_detection::CollisionRequest creq;
+            creq.contacts = true;
+            creq.max_contacts = 100;
+            creq.verbose = true;
+            creq.group_name = request.group_name;
+            collision_detection::CollisionResult cres;
+            planning_scene_->checkCollision(creq, cres, start_state);
+            if (cres.collision) {
+                for (collision_detection::CollisionResult::ContactMap::const_iterator it = cres.contacts.begin(), end = cres.contacts.end(); it != end; ++it) {
+                    ROS_INFO("contacts between %s and %s:", it->first.first.c_str(), it->first.second.c_str());
+                    for (int i = 0; i < it->second.size(); ++i) {
+                        ROS_INFO("%lf  %lf  %lf", it->second[i].pos(0), it->second[i].pos(1), it->second[i].pos(2));
+                    }
+                }
+                ROS_INFO("collision");
+            }
+            else {
+                ROS_INFO("no collision");
+            }
+*/
           ROS_ERROR("Could not compute plan successfully, error: %d. For more detailed error description please refer to moveit_msgs/MoveItErrorCodes", response.error_code_.val);
           return false;
         }
