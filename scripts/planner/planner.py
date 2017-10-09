@@ -23,10 +23,14 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import time
 import rospy
+import copy
 
 from moveit_msgs.msg import *
 from moveit_msgs.srv import *
+from threading import RLock
+from octomap_msgs.msg import Octomap
 
 def qMapToConstraints(q_map, tolerance=0.01):
     result = Constraints()
@@ -39,6 +43,46 @@ def qMapToConstraints(q_map, tolerance=0.01):
         constraint.weight = 1.0
         result.joint_constraints.append( constraint )
     return result
+
+def isConfigurationClose(q_map, js, tolerance=0.1):
+    for joint_name in q_map:
+        if not joint_name in js[1]:
+            return False
+        if abs(q_map[joint_name] - js[1][joint_name]) > tolerance:
+            return False
+    return True
+
+def isHeadConfigurationClose(current_q, dest_q, tolerance=0.1):
+    return abs(current_q[0]-dest_q[0]) < tolerance and\
+        abs(current_q[1]-dest_q[1]) < tolerance
+
+class OctomapListener:
+    def octomap_callback(self, data):
+        with self.lock:
+            self.octomap = data
+
+    def __init__(self, topic="/octomap_binary"):
+        self.lock = RLock()
+        self.octomap = None
+        rospy.Subscriber(topic, Octomap, self.octomap_callback)
+
+    def getOctomap(self, timeout_s=None):
+        if timeout_s == None:
+            with self.lock:
+                if self.octomap:
+                    return copy.copy(self.octomap)
+                return None
+        else:
+            time_start = time.time()
+            while not rospy.is_shutdown():
+                rospy.sleep(0.1)
+                with self.lock:
+                    if self.octomap:
+                        return copy.copy(self.octomap)
+                time_now = time.time()
+                if timeout_s and (time_now-time_start) > timeout_s:
+                    return None
+        return None
 
 class Planner:
     """
@@ -91,7 +135,12 @@ Class used as planner interface.
         request = GetMotionPlanRequest()
         request.motion_plan_request = req
 
-        res = self.plan_service( request ).motion_plan_response
+        try:
+            res = self.plan_service( request ).motion_plan_response
+        except rospy.service.ServiceException as e:
+            print "could not plan"
+            print e
+            res = None
 
         if not res:
             return None, None
