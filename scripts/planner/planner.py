@@ -27,7 +27,6 @@ import rospy
 
 from moveit_msgs.msg import *
 from moveit_msgs.srv import *
-from octomap_msgs.msg import OctomapWithPose
 
 def qMapToConstraints(q_map, tolerance=0.01):
     result = Constraints()
