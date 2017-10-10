@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   collision_convex_model
   kin_dyn_model
   planer_utils
+  rcprg_ros_utils
   octomap_msgs
   moveit_core
   moveit_ros_planning
@@ -23,7 +24,7 @@ find_package(orocos_kdl REQUIRED)
 find_package(octomap REQUIRED)
 
 catkin_package(
-    CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
+    CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils rcprg_ros_utils
 )
 
 catkin_python_setup()

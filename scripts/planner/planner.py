@@ -44,18 +44,6 @@ def qMapToConstraints(q_map, tolerance=0.01):
         result.joint_constraints.append( constraint )
     return result
 
-def isConfigurationClose(q_map, js, tolerance=0.1):
-    for joint_name in q_map:
-        if not joint_name in js[1]:
-            return False
-        if abs(q_map[joint_name] - js[1][joint_name]) > tolerance:
-            return False
-    return True
-
-def isHeadConfigurationClose(current_q, dest_q, tolerance=0.1):
-    return abs(current_q[0]-dest_q[0]) < tolerance and\
-        abs(current_q[1]-dest_q[1]) < tolerance
-
 class OctomapListener:
     def octomap_callback(self, data):
         with self.lock:
