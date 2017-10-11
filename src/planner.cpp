@@ -172,6 +172,22 @@ public:
 
         planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
 
+/*
+        // for debug only:
+
+        planning_interface::PlannerManagerPtr planner_manager = planning_pipeline_->getPlannerManager();
+        planning_interface::PlannerConfigurationMap conf_map = planner_manager->getPlannerConfigurations();
+
+        std::cout << "description: " << planner_manager->getDescription() << std::endl;
+        std::vector<std::string > planning_algorithms;
+        planner_manager->getPlanningAlgorithms(planning_algorithms);
+        for (int i = 0; i < planning_algorithms.size(); ++i) {
+            std::cout << planning_algorithms[i] << std::endl;
+        }
+        for (planning_interface::PlannerConfigurationMap::const_iterator it = conf_map.begin(); it != conf_map.end(); ++it) {
+            std::cout << it->first << " " << it->second.name << std::endl;
+        }
+*/
 //        robot_model_loader_.reset( new robot_model_loader::RobotModelLoader(robot_model_loader::RobotModelLoader::Options(robot_description_str_, robot_semantic_description_str_)) );
 //        planning_scene_monitor_.reset( new planning_scene_monitor::PlanningSceneMonitor(robot_model_loader_) );
 //        planning_scene_monitor_->getRobotModel();
