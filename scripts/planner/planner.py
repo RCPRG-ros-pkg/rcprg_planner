@@ -129,13 +129,11 @@ class Planner:
         @param max_velocity_scaling_factor      float: Scaling factor for velocity: the bigger, the faster robot moves.
         @param max_acceleration_scaling_factor  float: Scaling factor for acceleration: the bigger, the faster robot accelerates.
 
-        @return Returns 2-tuple: (4-tuple, list), where 4-tuple contains positions, velocities, accelerations and times, and the list
-            is a sequence of joint names.
+        @return Returns trajectory_msgs.msg.JointTrajectory.
         """
         req = MotionPlanRequest()
 
         joint_names = []
-        q_start = []
         for joint_name in q_start:
             req.start_state.joint_state.name.append( joint_name )
             req.start_state.joint_state.position.append( q_start[joint_name] )
@@ -180,19 +178,12 @@ class Planner:
             res = None
 
         if not res:
-            return None, None
+            return None
 
-        traj = [[],[],None, []]
-        time_prev = rospy.Duration()
-        for point in res.trajectory.joint_trajectory.points:
-            traj[0].append( point.positions )
-            traj[1].append( point.velocities )
-            traj[3].append( (point.time_from_start - time_prev).to_sec() )
-            time_prev = point.time_from_start
+        if len(res.trajectory.joint_trajectory.points) > self._max_traj_len:
+            return None
 
-        if len(traj[0]) > self._max_traj_len:
-            return None, None
-        return traj, res.trajectory.joint_trajectory.joint_names
+        return res.trajectory.joint_trajectory
 
     def processWorld(self, octomap):
         """!
