@@ -1,3 +1,7 @@
+"""
+This file contains ROS-based Python interface for WUT Velma Robot and some helper functions.
+"""
+
 # Copyright (c) 2014, Robot Control and Pattern Recognition Group, Warsaw University of Technology
 # All rights reserved.
 # 
@@ -33,6 +37,15 @@ from threading import RLock
 from octomap_msgs.msg import Octomap
 
 def qMapToConstraints(q_map, tolerance=0.01):
+    """!
+    This function converts dictionary of joint positions to moveit_msgs.Constraints structure.
+
+    @param q_map dictionary: A dictionary {name:position} of desired joint positions.
+
+    @param tolerance float: Tolerance of goal position.
+
+    @return Returns filled moveit_msgs.Constraints structure.
+    """
     result = Constraints()
     for joint_name in q_map:
         constraint = JointConstraint()
@@ -45,51 +58,87 @@ def qMapToConstraints(q_map, tolerance=0.01):
     return result
 
 class OctomapListener:
-    def octomap_callback(self, data):
-        with self.lock:
-            self.octomap = data
+    """!
+    Class used for obtaining occupancy map (as octomap) from octomap server.
+    """
+
+    # Private method.
+    def _octomap_callback(self, data):
+        with self._lock:
+            self._octomap = data
 
     def __init__(self, topic="/octomap_binary"):
-        self.lock = RLock()
-        self.octomap = None
-        rospy.Subscriber(topic, Octomap, self.octomap_callback)
+        """!
+        Initialization, ROS topic subscription.
+
+        @param topic string: octomap ROS topic.
+        """
+        self._lock = RLock()
+        self._octomap = None
+        rospy.Subscriber(topic, Octomap, self._octomap_callback)
 
     def getOctomap(self, timeout_s=None):
+        """!
+        Get current octomap from octomap server.
+
+        @param timeout_s float: Timeout in seconds.
+
+        @return Octomap object of type octomap_msgs.msg.Octomap, or None if timed out.
+        """
         if timeout_s == None:
-            with self.lock:
-                if self.octomap:
-                    return copy.copy(self.octomap)
+            with self._lock:
+                if self._octomap:
+                    return copy.copy(self._octomap)
                 return None
         else:
             time_start = time.time()
             while not rospy.is_shutdown():
                 rospy.sleep(0.1)
-                with self.lock:
-                    if self.octomap:
-                        return copy.copy(self.octomap)
+                with self._lock:
+                    if self._octomap:
+                        return copy.copy(self._octomap)
                 time_now = time.time()
                 if timeout_s and (time_now-time_start) > timeout_s:
                     return None
         return None
 
 class Planner:
+    """!
+    Class used as planner interface.
     """
-Class used as planner interface.
-"""
-
-    def plan(self, js, goal_constraints, group_name, attached_collision_objects=None, is_diff=False,
+    def plan(self, q_start, goal_constraints, group_name, attached_collision_objects=None, is_diff=False,
                     path_constraints=None, trajectory_constraints=None, workspace_parameters=None,
                     planner_id=None, num_planning_attempts=1,
                     allowed_planning_time=10.0, max_velocity_scaling_factor=1.0,
                     max_acceleration_scaling_factor=1.0):
+        """!
+        Plan motion in joint space.
 
+        @param q_start                  dictionary: A dictionary {name:position} of starting configuration.
+        @param goal_constraints         list: A list of goal constraints of type moveit_msgs.msg.Constraints.
+        @param group_name               string: Name of joint group to perform planning on.
+        @param attached_collision_objects   list: Objects attached to robot represented as a list of objects
+                                        of type moveit_msgs.msg.AttachedCollisionObject.
+        @param is_diff
+        @param path_constraints         Path constraints of type moveit_msgs.msg.Constraints.
+        @param trajectory_constraints   Trajectory constraints of type moveit_msgs.msg.TrajectoryConstraints.
+        @param workspace_parameters     Parameters of robots workspace of type moveit_msgs.msg.WorkspaceParameters.
+        @param planner_id               string: Name of planning algorithm.
+        @param num_planning_attempts    int: Maximum number of planning attempts.
+        @param allowed_planning_time    float: Maximum allowed time for planning.
+        @param max_velocity_scaling_factor      float: Scaling factor for velocity: the bigger, the faster robot moves.
+        @param max_acceleration_scaling_factor  float: Scaling factor for acceleration: the bigger, the faster robot accelerates.
+
+        @return Returns 2-tuple: (4-tuple, list), where 4-tuple contains positions, velocities, accelerations and times, and the list
+            is a sequence of joint names.
+        """
         req = MotionPlanRequest()
 
         joint_names = []
         q_start = []
-        for joint_name in js[1]:
+        for joint_name in q_start:
             req.start_state.joint_state.name.append( joint_name )
-            req.start_state.joint_state.position.append( js[1][joint_name] )
+            req.start_state.joint_state.position.append( q_start[joint_name] )
 
         if attached_collision_objects:
             req.start_state.attached_collision_objects = attached_collision_objects
@@ -141,11 +190,18 @@ Class used as planner interface.
             traj[3].append( (point.time_from_start - time_prev).to_sec() )
             time_prev = point.time_from_start
 
-        if len(traj[0]) > self.max_traj_len:
+        if len(traj[0]) > self._max_traj_len:
             return None, None
         return traj, res.trajectory.joint_trajectory.joint_names
 
     def processWorld(self, octomap):
+        """!
+        Updates occupancy map of the planner.
+
+        @param octomap  octomap_msgs.msg.Octomap: Occupancy map.
+
+        @return Returns True if the octomap was succesfully loaded, False otherwise.
+        """
         req = ApplyPlanningSceneRequest()
         #TODO: req.scene.name
         #TODO: req.scene.robot_state
@@ -166,9 +222,21 @@ Class used as planner interface.
         return True
 
     def __init__(self, max_traj_len):
-        self.max_traj_len = max_traj_len
+        """!
+        Initialization of Python planner interface.
+
+        @param max_traj_len int: Maximum number of nodes in a planned trajectory.
+        """
+        self._max_traj_len = max_traj_len
 
     def waitForInit(self, timeout_s=None):
+        """!
+        Wait until planner interface is not initialized.
+
+        @param timeout_s    float: Timeout in seconds.
+
+        @return Returns True if the Python planner interface was succesfully initialized, False otherwise.
+        """
         try:
             rospy.wait_for_service('/planner/plan', timeout=timeout_s)
             self.plan_service = rospy.ServiceProxy('/planner/plan', GetMotionPlan)
