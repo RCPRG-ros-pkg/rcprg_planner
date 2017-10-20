@@ -155,7 +155,7 @@ left_arm:
     - RRT
     - RRTConnect
     - RRTstar
-  longest_valid_segment_fraction: 0.001
+  longest_valid_segment_fraction: 0.01
 right_arm:
   planner_configs:
     - SBLkConfigDefault
@@ -172,7 +172,7 @@ right_arm:
     - RRT
     - RRTConnect
     - RRTstar
-  longest_valid_segment_fraction: 0.001
+  longest_valid_segment_fraction: 0.01
 impedance_joints:
   planner_configs:
     - CBiRRT2
@@ -191,5 +191,5 @@ impedance_joints:
     - XXL1Constrained
     - RRTConstrained
     - PRMstarkConfigDefault
-  longest_valid_segment_fraction: 0.001
+  longest_valid_segment_fraction: 0.01
 

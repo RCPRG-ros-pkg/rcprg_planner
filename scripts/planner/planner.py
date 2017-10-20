@@ -36,18 +36,20 @@ from moveit_msgs.srv import *
 from threading import RLock
 from octomap_msgs.msg import Octomap
 
-def qMapToConstraints(q_map, tolerance=0.01):
+def qMapToConstraints(q_map, tolerance=0.01, group=None):
     """!
     This function converts dictionary of joint positions to moveit_msgs.Constraints structure.
 
-    @param q_map dictionary: A dictionary {name:position} of desired joint positions.
-
-    @param tolerance float: Tolerance of goal position.
-
+    @param q_map        dictionary: A dictionary {name:position} of desired joint positions.
+    @param tolerance    float: Tolerance of goal position.
+    @param group        list of strings: Names of active joints in planning group.
+        Only constraints for these joints should be generated.
     @return Returns filled moveit_msgs.Constraints structure.
     """
     result = Constraints()
     for joint_name in q_map:
+        if group != None and not joint_name in group:
+            continue
         constraint = JointConstraint()
         constraint.joint_name = joint_name
         constraint.position = q_map[ joint_name ]
