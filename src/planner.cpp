@@ -58,7 +58,6 @@
 
 #include <collision_convex_model/collision_convex_model.h>
 #include "kin_dyn_model/kin_model.h"
-#include "rcprg_ros_utils/marker_publisher.h"
 #include "planer_utils/random_uniform.h"
 #include "planer_utils/utilities.h"
 #include "planer_utils/double_joint_collision_checker.h"
@@ -72,7 +71,6 @@ private:
     ros::ServiceServer service_plan_;
     ros::ServiceServer service_processWorld_;
 
-    MarkerPublisher markers_pub_;
     tf::TransformBroadcaster br;
 
     const double PI;
@@ -108,10 +106,9 @@ private:
     boost::shared_ptr<DoubleJointCC > wcc_r_;
 
 public:
-    Planner() :
-        nh_("planner"),
-        PI(3.141592653589793),
-        markers_pub_(nh_)
+    Planner()
+        : nh_("planner")
+        , PI(3.141592653589793)
     {
         joint_state_pub_ = nh_.advertise<sensor_msgs::JointState>("/joint_states", 10);
         service_reset_ = nh_.advertiseService("reset", &Planner::reset, this);
