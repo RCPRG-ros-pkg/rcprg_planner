@@ -59,6 +59,11 @@ def qMapToConstraints(q_map, tolerance=0.01, group=None):
         result.joint_constraints.append( constraint )
     return result
 
+#def endEffectorPoseToConstraints(effector_name, T_B_G, tolerance=0.01):
+#    assert (effector_name == "left" or effector_name=="right")
+#    result = Constraints()
+#    return result
+
 class OctomapListener:
     """!
     Class used for obtaining occupancy map (as octomap) from octomap server.
