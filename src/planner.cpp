@@ -66,7 +66,6 @@
 class Planner {
 private:
     ros::NodeHandle nh_;
-    ros::Publisher joint_state_pub_;
     ros::ServiceServer service_reset_;
     ros::ServiceServer service_plan_;
     ros::ServiceServer service_processWorld_;
@@ -110,7 +109,6 @@ public:
         : nh_("planner")
         , PI(3.141592653589793)
     {
-        joint_state_pub_ = nh_.advertise<sensor_msgs::JointState>("/joint_states", 10);
         service_reset_ = nh_.advertiseService("reset", &Planner::reset, this);
         service_plan_ = nh_.advertiseService("plan", &Planner::plan, this);
         service_processWorld_ = nh_.advertiseService("processWorld", &Planner::processWorld, this);
