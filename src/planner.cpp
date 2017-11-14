@@ -33,7 +33,6 @@
 #include "ros/package.h"
 #include <sensor_msgs/JointState.h>
 #include <visualization_msgs/MarkerArray.h>
-#include <tf/transform_broadcaster.h>
 #include <interactive_markers/interactive_marker_server.h>
 
 // MoveIt!
@@ -69,8 +68,6 @@ private:
     ros::ServiceServer service_reset_;
     ros::ServiceServer service_plan_;
     ros::ServiceServer service_processWorld_;
-
-    tf::TransformBroadcaster br;
 
     const double PI;
 
