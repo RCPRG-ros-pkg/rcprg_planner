@@ -102,6 +102,15 @@ planner_configs:
     type: geometric::RRT
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability? default: 0.05
+  FMT:
+    plugin: ompl_interface/GeometricFixedPosePlanningContext
+    type: geometric::FMT
+    num_samples: 100000
+    radius_multiplier: 0.5
+    nearest_k: 1
+    cache_cc: 1
+    heuristics: 0
+    extended_fmt: 1
   RRTConnect:
     plugin: ompl_interface/GeometricFixedPosePlanningContext
     type: geometric::RRTConnect
@@ -153,6 +162,7 @@ left_arm:
     - PRMkConfigDefault
     - PRMstarkConfigDefault
     - RRT
+    - FMT
     - RRTConnect
     - RRTstar
   longest_valid_segment_fraction: 0.01
@@ -170,6 +180,7 @@ right_arm:
     - PRMkConfigDefault
     - PRMstarkConfigDefault
     - RRT
+    - FMT
     - RRTConnect
     - RRTstar
   longest_valid_segment_fraction: 0.01
@@ -182,6 +193,7 @@ impedance_joints:
     - BKPIECE
     - KPIECE
     - RRT
+    - FMT
     - RRTConnect
     - RRTstar
     - TRRT
