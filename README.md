@@ -1,4 +1,4 @@
-# planner {#planner_readme}
+# rcprg_planner {#planner_readme}
 
 This package implements planner for WUT Velma robot.
 

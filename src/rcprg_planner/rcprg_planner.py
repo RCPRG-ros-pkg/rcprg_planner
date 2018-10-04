@@ -237,14 +237,14 @@ class Planner:
         @return Returns True if the Python planner interface was succesfully initialized, False otherwise.
         """
         try:
-            rospy.wait_for_service('/planner/plan', timeout=timeout_s)
-            self.plan_service = rospy.ServiceProxy('/planner/plan', GetMotionPlan)
+            rospy.wait_for_service('/rcprg_planner/plan', timeout=timeout_s)
+            self.plan_service = rospy.ServiceProxy('/rcprg_planner/plan', GetMotionPlan)
         except:
             return False
 
         try:
-            rospy.wait_for_service('/planner/processWorld', timeout=timeout_s)
-            self.processWorld_service = rospy.ServiceProxy('/planner/processWorld', ApplyPlanningScene)
+            rospy.wait_for_service('/rcprg_planner/processWorld', timeout=timeout_s)
+            self.processWorld_service = rospy.ServiceProxy('/rcprg_planner/processWorld', ApplyPlanningScene)
         except:
             return False
         return True
