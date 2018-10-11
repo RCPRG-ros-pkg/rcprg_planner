@@ -1,9 +1,9 @@
-## Contains ROS-based Python interface for planner for WUT Velma Robot and some helper functions.
+## Contains ROS-based Python interface for planner and some helper functions.
 # @file planner.py
 # @ingroup python_api
-# @namespace planner.planner Contains ROS-based Python interface for planner for WUT Velma Robot and some helper functions.
+# @namespace planner.planner Contains ROS-based Python interface for planner and some helper functions.
 
-# Copyright (c) 2014, Robot Control and Pattern Recognition Group, Warsaw University of Technology
+# Copyright (c) 2018, Robot Control and Pattern Recognition Group, Warsaw University of Technology
 # All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or without
