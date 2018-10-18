@@ -46,7 +46,7 @@
 
 //#include <moveit/kinematic_constraints/utils.h>
 //#include <eigen_conversions/eigen_msg.h>
-//#include <eigen_conversions/eigen_kdl.h>
+#include <eigen_conversions/eigen_kdl.h>
 
 #include <string>
 //#include <stdlib.h>
@@ -56,7 +56,7 @@
 //#include "Eigen/LU"
 
 #include <collision_convex_model/collision_convex_model.h>
-//#include "kin_dyn_model/kin_model.h"
+#include "kin_dyn_model/kin_model.h"
 //#include "planer_utils/random_uniform.h"
 //#include "planer_utils/utilities.h"
 //#include "planer_utils/double_joint_collision_checker.h"
@@ -65,6 +65,8 @@
 // plugin for robot interface
 #include <pluginlib/class_loader.h>
 #include <rcprg_planner/robot_interface.h>
+
+#include <rcprg_ros_utils/marker_publisher.h>
 
 namespace rcprg_planner {
 
@@ -75,6 +77,8 @@ private:
     ros::ServiceServer service_plan_;
     ros::ServiceServer service_processWorld_;
 
+    MarkerPublisher mp_;
+
     //const double PI;
 
     //KDL::Frame int_marker_pose_;
@@ -83,9 +87,8 @@ private:
     std::string robot_semantic_description_str_;
 
     //boost::shared_ptr<self_collision::CollisionModel> col_model_;
-    //boost::shared_ptr<KinematicModel > kin_model_;
+    boost::shared_ptr<KinematicModel > kin_model_;
     //std::vector<KDL::Frame > links_fk_;
-
 
 //    robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
 //    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
@@ -104,6 +107,7 @@ private:
 public:
     Planner()
         : nh_("rcprg_planner")
+        , mp_(nh_)
         , robot_interface_loader_("rcprg_planner", "rcprg_planner::RobotInterface")
     {
 
@@ -138,6 +142,8 @@ public:
         std::string xml_out;
         self_collision::CollisionModel::convertSelfCollisionsInURDF(robot_description_str_, xml_out);
 
+        //nh_.getParam("/velma_core_cs/JntLimit/limits_1", wcc_l_constraint_polygon_);
+
         //
         // moveit
         //
@@ -149,6 +155,93 @@ public:
         planning_scene_->setStateFeasibilityPredicate( boost::bind(&RobotInterface::isStateValid, robot_interface_.get(), _1, _2) );
 
         planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
+
+        std::vector<double > limits_lo({-2.96,-2.09,-2.96,0.2,-2.96,-2.09,-2.96});
+        std::vector<double > limits_hi({2.96,-0.2,2.96,2.095,2.96,-0.2,2.96});
+
+        std::vector<std::string > joint_names({"right_arm_0_joint", "right_arm_1_joint", "right_arm_2_joint",
+            "right_arm_3_joint", "right_arm_4_joint", "right_arm_5_joint", "right_arm_6_joint"});
+        std::vector<double > joint_values({-0.3, -1.8, 1.25, 0.85, 0, -0.5, 0});
+        moveit::core::RobotState ss(robot_model_);
+        ss.setToDefaultValues();
+        for (int i = 0; i < joint_names.size(); ++i) {
+            ss.setVariablePosition(joint_names[i], joint_values[i]);
+        }
+        ss.update();
+/*        ss.setVariablePosition("right_arm_0_joint", -0.3)
+        ss.setVariablePosition("right_arm_1_joint", -1.8)
+        ss.setVariablePosition("right_arm_2_joint", 1.25)
+        ss.setVariablePosition("right_arm_3_joint", 0.85)
+        ss.setVariablePosition("right_arm_4_joint", 0.0)
+        ss.setVariablePosition("right_arm_5_joint", -0.5)
+        ss.setVariablePosition("right_arm_6_joint", 0.0)
+*/
+        planning_scene_->isStateValid(ss);
+
+        //kin_model_.reset( new KinematicModel(robot_description_str, articulated_joint_names_) );
+
+        std::vector<KDL::Frame > valid_frames;
+
+//        std::vector<double > inc_val({-0.1, -0.05, 0.0, 0.05, 0.1});
+        std::vector<std::vector<double > > inc_val;
+
+        for (int i = 0; i < 4; ++i) {
+            inc_val.push_back( std::vector<double >() );
+            for (double d = limits_lo[i]+0.01; d < limits_hi[i]-0.01; d += 0.3) {
+                inc_val[i].push_back( d );
+            }
+            inc_val[i].push_back( limits_hi[i]-0.01 );
+        }
+
+        inc_val.push_back( std::vector<double >({0}) );
+        inc_val.push_back( std::vector<double >({-0.5}) );
+        inc_val.push_back( std::vector<double >({0}) );
+
+/*({
+//            {-1, -0.7, -0.4, -0.1, 0.1, 0.4, 0.7, 1},
+            {-2,-1.6,-1.2,-0.8,-0.4,0,0.4,0.8,1.2,1.6,2},
+//            {-1, -0.7, -0.4, -0.1, 0.1, 0.4, 0.7, 1},
+//            {-1, -0.7, -0.4, -0.1, 0.1, 0.4, 0.7, 1},
+//            {-1, -0.7, -0.4, -0.1, 0.1, 0.4, 0.7, 1},
+//            {-2,-1.9,-1.8,-1.7,-1.6,-1.5,-1.4,-1.3,-1.2,-1.1,-1,-0.9,-0.8,-0.7,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2},
+            //{-2,-1.9,-1.8,-1.7,-1.6,-1.5,-1.4,-1.3,-1.2,-1.1,-1,-0.9,-0.8,-0.7,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2},
+            {-2,-1.6,-1.2,-0.8,-0.4,0,0.4,0.8,1.2,1.6,2},
+            {-2,-1.6,-1.2,-0.8,-0.4,0,0.4,0.8,1.2,1.6,2},
+            //{-2,-1.9,-1.8,-1.7,-1.6,-1.5,-1.4,-1.3,-1.2,-1.1,-1,-0.9,-0.8,-0.7,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2},
+            {-2,-1.6,-1.2,-0.8,-0.4,0,0.4,0.8,1.2,1.6,2},
+            {0},
+            {0},
+            {0} });
+*/
+        std::vector<double > out;
+        generateJointPositionVec(joint_values, inc_val, limits_lo, limits_hi, out);
+        std::cout << out.size() << std::endl;
+        for (int i = 0; i < out.size(); i += 7) {
+            for (int j = 0; j < joint_names.size(); ++j) {
+                ss.setVariablePosition(joint_names[j], out[i+j]);
+            }
+            ss.update();
+            if (planning_scene_->isStateValid(ss)) {
+                KDL::Frame T_W_Ee;
+                tf::transformEigenToKDL( ss.getGlobalLinkTransform("right_arm_6_link"), T_W_Ee);
+                valid_frames.push_back(T_W_Ee);
+            }
+            int sample_idx = i/7;
+            if (sample_idx % 100 == 0) {
+                std::cout << "sample " << sample_idx << " of " << (out.size()/7) << std::endl;
+            }
+        }
+        std::cout << "valid_frames: " << valid_frames.size() << std::endl;
+
+        std::vector<KDL::Vector > pts;
+        for (int i = 0; i < valid_frames.size(); ++i) {
+            pts.push_back( valid_frames[i] * KDL::Vector() );
+        }
+        // visual marker
+        int m_id = 0;
+        m_id = mp_.addSphereListMarker(m_id, pts, 1, 0, 0, 1.0, 0.03, "world");
+
+        mp_.publish();
 
 /*
         // for debug only:
@@ -172,6 +265,26 @@ public:
 
 
         //pluginlib::ClassLoader<velma_planner::RobotInterface> robot_interface_loader_("planner", "velma_planner::RobotInterface");
+    }
+
+    void generateJointPositionVec(const std::vector<double >& central_pos, const std::vector<std::vector<double > >& inc_val,
+            const std::vector<double >& limits_lo, const std::vector<double >& limits_hi, std::vector<double >& out, int depth=0) {
+        if (depth == central_pos.size()) {
+            for (int i = 0; i < central_pos.size(); ++i) {
+                out.push_back( central_pos[i] );
+            }
+            return;
+        }
+
+        std::vector<double > pos(central_pos);
+        for (int i = 0; i < inc_val[depth].size(); ++i) {
+            //pos[depth] = central_pos[depth] + inc_val[depth][i];
+            pos[depth] = inc_val[depth][i];
+            if (pos[depth] < limits_lo[depth] || pos[depth] > limits_hi[depth]) {
+                continue;
+            }
+            generateJointPositionVec(pos, inc_val, limits_lo, limits_hi, out, depth+1);
+        }
     }
 
     ~Planner() {

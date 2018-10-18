@@ -1,8 +1,8 @@
 <package>
-  <name>planner</name>
+  <name>rcprg_planner</name>
   <version>1.0.0</version>
   <description>
-    This package contains planners implementation.
+    This package contains rcprg_planner implementation.
   </description>
   <author email="dawid.seredynski@gmail.com">Dawid Seredynski</author>
   <maintainer email="dawid.seredynski@gmail.com">Dawid Seredynski</maintainer>

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(planner)
+project(rcprg_planner)
 
 find_package(catkin REQUIRED COMPONENTS
   rtt_ros
@@ -23,7 +23,8 @@ find_package(orocos_kdl REQUIRED)
 find_package(octomap REQUIRED)
 
 catkin_package(
-    CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
+  INCLUDE_DIRS include
+  CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
 )
 
 catkin_python_setup()
@@ -31,20 +32,29 @@ catkin_python_setup()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 link_directories(${orocos_kdl_LIBRARY_DIRS} ${OCTOMAP_LIBRARY_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${Eigen3_INCLUDE_DIRS} ${USE_OROCOS_INCLUDE_DIRS} ${OCTOMAP_INCLUDE_DIRS})
 
-include_directories(${catkin_INCLUDE_DIRS} ${Eigen3_INCLUDE_DIRS} ${USE_OROCOS_INCLUDE_DIRS} ${OCTOMAP_INCLUDE_DIRS})
+add_executable(rcprg_planner src/planner.cpp)
+target_link_libraries(rcprg_planner ${catkin_LIBRARIES})
 
-add_executable(planner src/planner.cpp)
+add_executable(workspace_tool src/workspace_tool.cpp)
+target_link_libraries(workspace_tool ${catkin_LIBRARIES})
 
-target_link_libraries(planner ${catkin_LIBRARIES})
-
-install(TARGETS planner
+install(TARGETS rcprg_planner workspace_tool
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
+install(DIRECTORY config/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
+  )
+
 install(DIRECTORY launch/
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
   )
+
+install(DIRECTORY include/rcprg_planner/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+)
 
