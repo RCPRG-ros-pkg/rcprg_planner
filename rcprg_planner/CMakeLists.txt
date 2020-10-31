@@ -6,6 +6,7 @@ find_package(catkin REQUIRED COMPONENTS
   rtt_rosclock
   std_msgs
   interactive_markers
+  kdl_conversions
   tf
   eigen_conversions
   cmake_modules
@@ -16,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   moveit_core
   moveit_ros_planning
   moveit_ros_planning_interface
+  rcprg_planner_msgs
 )
 
 find_package(Eigen3 REQUIRED)
@@ -24,7 +26,7 @@ find_package(octomap REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils
+  CATKIN_DEPENDS collision_convex_model kin_dyn_model planer_utils rcprg_planner_msgs
 )
 
 catkin_python_setup()
