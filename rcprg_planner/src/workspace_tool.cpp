@@ -117,6 +117,62 @@ void getUniformDirections(double angle, std::vector<KDL::Vector >& result) {
     }
 }
 
+class LinearIntervalFunction {
+private:
+    typedef std::vector<double > Vec;
+    Vec x_;
+    Vec val_;
+public:
+    LinearIntervalFunction(const Vec& x = Vec(), const Vec& val = Vec())
+    : x_(x)
+    , val_(val)
+    {
+        if (x_.size() != val_.size()) {
+            throw std::invalid_argument("x and v are of different size");
+        }
+    }
+
+    void addPoint(double x, double val) {
+        if (x_.size() == 0) {
+            x_.push_back( x );
+            val_.push_back(val);
+            return;
+        }
+
+        Vec::iterator it_val = val_.begin();
+        for (Vec::iterator it_x = x_.begin(); it_x != x_.end(); ++it_x, ++it_val) {
+            if (x < *it_x) {
+                x_.insert( it_x, x );
+                val_.insert( it_val, val );
+                return;
+            }
+            else if (x == *it_x) {
+                throw std::invalid_argument("Added point with the same x twice");
+            }
+        }
+        x_.insert( x_.end(), x );
+        val_.insert( val_.end(), val );
+    }
+
+    double interpolate(double x) {
+        if (x_.size() < 2) {
+            throw std::invalid_argument("Could not interpolate the function with only one point");
+        }
+
+        if (x < x_[0]) {
+            throw std::invalid_argument("x is below the domain range");
+        }
+
+        for (int idx = 0; idx < x_.size()-1; ++idx) {
+            if (x >= x_[idx] && x <= x_[idx+1]) {
+                double f = (x - x_[idx]) / (x_[idx+1] - x_[idx]);
+                return (1.0-f) * val_[idx] + f * val_[idx+1];
+            }
+        }
+        throw std::invalid_argument("x is above the domain range");
+    }
+};
+
 unsigned char* serialize_double(double d, unsigned char* buf, bool write) {
     if (write) {
         *((double*)buf) = d;
@@ -542,6 +598,8 @@ private:
         return index[0] + se3_size_[0] * (index[1] + se3_size_[1]*index[2]);
     }
 public:
+    enum arm_side {ARM_R, ARM_L};
+
     ReachabilityRange(const DiscreteNSpace& dspace_conf, const DiscreteSE3& dspace_se3)
     : dspace_conf_( dspace_conf )
     , dspace_se3_( dspace_se3 )
@@ -575,15 +633,27 @@ public:
         return this->getCellAtIndex(index);
     }
 
-    double getMatchDistQ(const DiscreteNSpace::Value& _q, const KDL::Frame& T) {
-        const Cell& cell = this->getCellAtPos(T.p);
+    double getMatchDistQ(const DiscreteNSpace::Value& _q, const KDL::Frame& T_T0_W, arm_side side) {
+        double side_factor;
+        KDL::Frame T_T0_W_side;
+        if (side == ARM_R) {
+            T_T0_W_side = T_T0_W;
+            side_factor = 1;
+        }
+        else {
+            T_T0_W_side = KDL::Frame(KDL::Rotation::RotX(PI)*T_T0_W.M,
+                                        KDL::Vector(T_T0_W.p.x(), -T_T0_W.p.y(), T_T0_W.p.z()));
+            side_factor = -1;
+        }
+
+        const Cell& cell = this->getCellAtPos(T_T0_W_side.p);
         double min_dist = 10000.0;
         for (int i = 0; i < cell.getSamplesCount(); ++i) {
             //KDL::Twist twist = KDL::diff(T, cell.getSamples()[i].T, 1.0);
             double q_dist = 0;
             DiscreteNSpace::Value q_cell = dspace_conf_.getIndexValue( cell.getSamples()[i].q );
             for (int j = 0; j < _q.size(); ++j) {
-                q_dist += (q_cell[j]-_q[j])*(q_cell[j]-_q[j]);
+                q_dist += (q_cell[j]-side_factor*_q[j])*(q_cell[j]-side_factor*_q[j]);
             }
             //double dist = twist.rot.Norm() + twist.vel.Norm()*10.0 + sqrt(q_dist);
             double dist = sqrt(q_dist);
@@ -594,11 +664,21 @@ public:
         return min_dist;
     }
 
-    double getMatchDistT(const KDL::Frame& T) {
-        const Cell& cell = this->getCellAtPos(T.p);
+    double getMatchDistT(const KDL::Frame& T_T0_W, arm_side side) {
+        KDL::Frame T_T0_W_side;
+        if (side == ARM_R) {
+            T_T0_W_side = T_T0_W;
+        }
+        else {
+            T_T0_W_side = KDL::Frame(KDL::Rotation::RotX(PI)*T_T0_W.M,
+                                        KDL::Vector(T_T0_W.p.x(), -T_T0_W.p.y(), T_T0_W.p.z()));
+        }
+
+        const Cell& cell = this->getCellAtPos(T_T0_W_side.p);
         double min_dist = 10000.0;
+        std::cout << "getMatchDistT: samples: " << cell.getSamplesCount() << std::endl;
         for (int i = 0; i < cell.getSamplesCount(); ++i) {
-            KDL::Twist twist = KDL::diff(T, cell.getSamples()[i].T, 1.0);
+            KDL::Twist twist = KDL::diff(T_T0_W_side, cell.getSamples()[i].T, 1.0);
             double dist = twist.rot.Norm() + twist.vel.Norm()*10.0;
             if (dist < min_dist) {
                 min_dist = dist;
@@ -635,6 +715,7 @@ public:
         buf = DiscreteSE3::deserialize(dspace_se3, buf);
         int samples_count;
         buf = deserialize_int( samples_count, buf );
+
         result.reset(new ReachabilityRange(*dspace_conf, *dspace_se3));
         for (int sample_idx = 0; sample_idx < samples_count; ++sample_idx) {
             Sample sample;
@@ -648,26 +729,17 @@ public:
 class WorkspaceTool {
 private:
     ros::NodeHandle nh_;
-    ros::ServiceServer service_reset_;
-    ros::ServiceServer service_plan_;
-    ros::ServiceServer service_processWorld_;
+
+    ros::ServiceServer service_reacahbility_range_;
 
     MarkerPublisher mp_;
 
     ReachabilityRangePtr rr_;
-    //const double PI;
-
-    //KDL::Frame int_marker_pose_;
 
     std::string robot_description_str_;
     std::string robot_semantic_description_str_;
 
-    //boost::shared_ptr<self_collision::CollisionModel> col_model_;
     boost::shared_ptr<KinematicModel > kin_model_;
-    //std::vector<KDL::Frame > links_fk_;
-
-//    robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
-//    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
 
     robot_model::RobotModelPtr robot_model_;
     planning_scene::PlanningScenePtr planning_scene_;
@@ -692,9 +764,9 @@ public:
         arr_double7 limits_lo({-2.96,-2.09,-2.96,0.2,-2.96,-2.09,-2.96});
         arr_double7 limits_hi({2.96,-0.2,2.96,2.095,2.96,-0.2,2.96});
 
-        std::vector<std::string > joint_names({"right_arm_0_joint", "right_arm_1_joint",
-            "right_arm_2_joint", "right_arm_3_joint", "right_arm_4_joint", "right_arm_5_joint",
-            "right_arm_6_joint"});
+        std::vector<std::string > joint_names({
+            "right_arm_0_joint", "right_arm_1_joint", "right_arm_2_joint", "right_arm_3_joint",
+            "right_arm_4_joint", "right_arm_5_joint", "right_arm_6_joint",});
 
         moveit::core::RobotState ss(robot_model_);
         ss.setToDefaultValues();
@@ -726,6 +798,10 @@ public:
         DiscreteSE3 dspace_se3(bb, 0.05);
         ReachabilityRangePtr rr(new ReachabilityRange(dspace7, dspace_se3));
 
+        KDL::Frame T_W_T0;
+        tf::transformEigenToKDL( ss.getGlobalLinkTransform("torso_link0"), T_W_T0);
+        KDL::Frame T_T0_W = T_W_T0.Inverse();
+
         int step = 0;
         do {
             DiscreteNSpace::Value val = dspace7.getIndexValue(index);
@@ -733,11 +809,12 @@ public:
                 ss.setVariablePosition(joint_names[j], val[j]);
             }
             ss.update();
-            KDL::Frame T_W_Ee;
-            tf::transformEigenToKDL( ss.getGlobalLinkTransform("right_arm_7_link"), T_W_Ee);
-            if ( bb.isIn(T_W_Ee.p) ) {
+            KDL::Frame T_W_Wr;
+            tf::transformEigenToKDL( ss.getGlobalLinkTransform("right_arm_7_link"), T_W_Wr);
+            if ( bb.isIn(T_W_Wr.p) ) {
                 if (planning_scene_->isStateValid(ss)) {
-                    rr->addPoint(index, T_W_Ee);
+                    KDL::Frame T_T0_Wr = T_T0_W * T_W_Wr;
+                    rr->addPoint(index, T_T0_Wr);
                 }
             }
             if ((step%1000) == 0) {
@@ -756,7 +833,7 @@ public:
 
     WorkspaceTool()
         : nh_("workspace_tool")
-        , mp_(nh_)
+        , mp_(nh_, "/velma/current_reachability")
         , robot_interface_loader_("rcprg_planner", "rcprg_planner::RobotInterface")
     {
 
@@ -780,12 +857,8 @@ public:
             return;
         }
 
-        getUniformDirections(20.0/180.0*PI, directions_);
+        getUniformDirections(35.0/180.0*PI, directions_);
         std::cout << "Using directions: " << directions_.size() << std::endl;
-
-        service_reset_ = nh_.advertiseService("reset", &WorkspaceTool::reset, this);
-        service_plan_ = nh_.advertiseService("plan", &WorkspaceTool::plan, this);
-        service_processWorld_ = nh_.advertiseService("processWorld", &WorkspaceTool::processWorld, this);
 
         nh_.getParam("/robot_description", robot_description_str_);
         nh_.getParam("/robot_semantic_description", robot_semantic_description_str_);
@@ -808,46 +881,20 @@ public:
         planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
 
 
-        const std::string rr_filename = "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_01";
+        const std::string rr_filename = "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_medium";
         //rr_ = createModel();
         //saveModel(rr_filename, rr);
 
         const std::string rr_saved_filename =
-                "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_big";
+                "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_big";
         std::cout << "Loading ReachabilityRange from file \"" << rr_saved_filename << "\"..."
                                                                                     << std::endl;
         rr_ = loadModel(rr_saved_filename);
         std::cout << "Loaded ReachabilityRange, number of samples: " << rr_->getSamplesCount()
                                                                                     << std::endl;
-
-        ros::ServiceServer service = nh_.advertiseService("reachability_range",
+        // Everything is initialize, so start services and spinning
+        service_reacahbility_range_ = nh_.advertiseService("reachability_range",
                                                 &WorkspaceTool::reachabilityRangeService, this);
-
-        testReachabilityRange(rr_);
-
-
-/*
-        // for debug only:
-
-        planning_interface::PlannerManagerPtr planner_manager = planning_pipeline_->getPlannerManager();
-        planning_interface::PlannerConfigurationMap conf_map = planner_manager->getPlannerConfigurations();
-
-        std::cout << "description: " << planner_manager->getDescription() << std::endl;
-        std::vector<std::string > planning_algorithms;
-        planner_manager->getPlanningAlgorithms(planning_algorithms);
-        for (int i = 0; i < planning_algorithms.size(); ++i) {
-            std::cout << planning_algorithms[i] << std::endl;
-        }
-        for (planning_interface::PlannerConfigurationMap::const_iterator it = conf_map.begin(); it != conf_map.end(); ++it) {
-            std::cout << it->first << " " << it->second.name << std::endl;
-        }
-*/
-//        robot_model_loader_.reset( new robot_model_loader::RobotModelLoader(robot_model_loader::RobotModelLoader::Options(robot_description_str_, robot_semantic_description_str_)) );
-//        planning_scene_monitor_.reset( new planning_scene_monitor::PlanningSceneMonitor(robot_model_loader_) );
-//        planning_scene_monitor_->getRobotModel();
-
-
-        //pluginlib::ClassLoader<velma_planner::RobotInterface> robot_interface_loader_("planner", "velma_planner::RobotInterface");
     }
 
     void saveData(const std::string& filename, const unsigned char* buf, int size) {
@@ -895,7 +942,6 @@ public:
         do {
             const ReachabilityRange::Cell& cell = rr->getCellAtIndex(index_se3);
             if (cell.getSamplesCount() > 0) {
-            //for (int i = 0; i < valid_frames.size(); ++i) {
                 pts.push_back( rr->getSE3().getIndexValue(index_se3) );
             }
             for (int i = 0; i < cell.getSamplesCount(); ++i) {
@@ -918,71 +964,95 @@ public:
 
     sensor_msgs::JointState getCurrentJointState() {
         std::lock_guard<std::mutex> guard(current_joint_states_ptr_mutex_);
-        return *current_joint_states_ptr_;
+        if (current_joint_states_ptr_) {
+            return *current_joint_states_ptr_;
+        }
+        return sensor_msgs::JointState();
     }
 
-    void testReachabilityRange(const ReachabilityRangePtr& rr) {
+    void showReachabilityRange() {
         tf2_ros::Buffer tfBuffer;
         tf2_ros::TransformListener tfListener(tfBuffer);
         geometry_msgs::TransformStamped transformStamped;
 
-        std::vector<std::string > joint_names({"right_arm_0_joint", "right_arm_1_joint",
-                "right_arm_2_joint", "right_arm_3_joint", "right_arm_4_joint", "right_arm_5_joint",
-                "right_arm_6_joint"});
+        const std::array<std::string, 7 > joint_names_right({
+                "right_arm_0_joint", "right_arm_1_joint", "right_arm_2_joint", "right_arm_3_joint",
+                "right_arm_4_joint", "right_arm_5_joint", "right_arm_6_joint"});
+        const std::array<std::string, 7 > joint_names_left({
+                "left_arm_0_joint", "left_arm_1_joint", "left_arm_2_joint", "left_arm_3_joint",
+                "left_arm_4_joint", "left_arm_5_joint", "left_arm_6_joint"});
 
         ros::Subscriber sub = nh_.subscribe("/joint_states", 1000,
                                                         &WorkspaceTool::jointStateCallback, this);
 
+        const std::array<std::string, 2 > end_effector_names({"right_arm_7_link",
+                                                                "left_arm_7_link"});
+        const std::array<ReachabilityRange::arm_side, 2> arm_sides({ReachabilityRange::ARM_R,
+                                                                    ReachabilityRange::ARM_L});
+        const std::array<std::array<std::string, 7 >, 2 > joint_names({joint_names_right,
+                                                                        joint_names_left});
+
+        LinearIntervalFunction func_size({0, 3, 20000}, {0.04, 0.00001, 0.00001});
+        bool is_publishing = false;
         while (ros::ok()) {
             ros::spinOnce();
+            ros::Duration(0.1).sleep();
 
-            try{
-              transformStamped = tfBuffer.lookupTransform("torso_base", "right_arm_7_link",
-                                       ros::Time(0));
-            }
-            catch (tf2::TransformException &ex) {
-              ROS_WARN("%s",ex.what());
-              ros::Duration(1.0).sleep();
-              continue;
-            }
-            KDL::Frame T_B_Wr;
-            T_B_Wr = tf2::transformToKDL(transformStamped);
-
-            sensor_msgs::JointState js = getCurrentJointState();
-            DiscreteNSpace::Value q_current( joint_names.size() );
-            for (int jnt_idx = 0; jnt_idx < joint_names.size(); ++jnt_idx) {
-                for (int i = 0; i < js.name.size(); ++i) {
-                    if (js.name[i] == joint_names[jnt_idx]) {
-                        q_current[jnt_idx] = js.position[i];
-                    }
+            if (mp_.getNumSubscribers() == 0) {
+                if (is_publishing) {
+                    std::cout << "no subscribers - stopping publishing" << std::endl;
+                    is_publishing = false;
                 }
-                
+                continue;
             }
-
-            //double match_dist = rr->getMatchDist(T_B_Wr);
-            //double match_val = (10.0 - match_dist)/10.0;
-            //if (match_val < 0) {
-            //    match_val = 0.0;
-            //}
-
+            else {
+                if (!is_publishing) {
+                    std::cout << "detected subscribers - starting publishing" << std::endl;
+                    is_publishing = true;
+                }
+            }
 
             int m_id = 0;
-            for (int i = 0; i < directions_.size(); ++i) {
-                for (double dist = 0.04; dist < 0.2; dist += 0.04) {
-                    KDL::Vector offset = directions_[i] * dist;
-                    double match_dist = rr->getMatchDistQ( q_current, KDL::Frame(T_B_Wr.M, T_B_Wr.p+offset ) );
-                    //double match_dist = rr->getMatchDistT( KDL::Frame(T_B_Wr.M, T_B_Wr.p+offset ));
-                    double match_val = (1.0 - match_dist)/1.0;
-                    if (match_val < 0.00001) {
-                        match_val = 0.00001;
+            for (int arm_idx = 0; arm_idx < end_effector_names.size(); ++arm_idx) {
+
+                try{
+                  transformStamped = tfBuffer.lookupTransform("torso_link0",
+                                                    end_effector_names[arm_idx], ros::Time(0));
+                }
+                catch (tf2::TransformException &ex) {
+                  ROS_WARN("%s",ex.what());
+                  ros::Duration(1.0).sleep();
+                  continue;
+                }
+                KDL::Frame T_T0_Wr;
+                T_T0_Wr = tf2::transformToKDL(transformStamped);
+
+                sensor_msgs::JointState js = getCurrentJointState();
+                DiscreteNSpace::Value q_current( joint_names[arm_idx].size() );
+                for (int jnt_idx = 0; jnt_idx < joint_names[arm_idx].size(); ++jnt_idx) {
+                    q_current[jnt_idx] = 0;
+                    for (int i = 0; i < js.name.size(); ++i) {
+                        if (js.name[i] == joint_names[arm_idx][jnt_idx]) {
+                            q_current[jnt_idx] = js.position[i];
+                        }
                     }
-                    m_id = mp_.addSinglePointMarker(m_id, T_B_Wr.p+offset, 0, 1, 0, 0.5, match_val*0.02, "torso_base");
+                    
+                }
+
+                for (int i = 0; i < directions_.size(); ++i) {
+                    for (double dist = 0.04; dist < 0.2; dist += 0.04) {
+                        KDL::Vector offset = directions_[i] * dist;
+                        double match_dist = rr_->getMatchDistQ( q_current,
+                                KDL::Frame(T_T0_Wr.M, T_T0_Wr.p+offset ), arm_sides[arm_idx] );
+                        //double match_dist = rr->getMatchDistT( KDL::Frame(T_T0_Wr.M, T_T0_Wr.p+offset ));
+                        double match_val = func_size.interpolate(match_dist);
+                        m_id = mp_.addSinglePointMarker(m_id, T_T0_Wr.p+offset, 0, 1, 0, 0.5,
+                                                                            match_val, "torso_link0");
+                    }
                 }
             }
-            //std::cout << T_B_Wr.p.x() << ", " << T_B_Wr.p.y() << ", " << T_B_Wr.p.z() << ": " << match_dist << " " << match_val << std::endl;
+            //std::cout << T_T0_Wr.p.x() << ", " << T_T0_Wr.p.y() << ", " << T_T0_Wr.p.z() << ": " << match_dist << " " << match_val << std::endl;
             mp_.publish();
-
-            ros::Duration(0.1).sleep();
         }
 
     }
@@ -994,6 +1064,20 @@ public:
             res.message = "frame_id must be \"torso_base\"";
             return true;
         }
+
+        ReachabilityRange::arm_side side;
+        if (req.arm_side == rcprg_planner_msgs::ReachabilityRange::Request::ARM_R) {
+            side = ReachabilityRange::ARM_R;
+        }
+        else if (req.arm_side == rcprg_planner_msgs::ReachabilityRange::Request::ARM_L) {
+            side = ReachabilityRange::ARM_L;
+        }
+        else {
+            res.success = false;
+            res.message = "arm_side must be either \"ARM_R\" or \"ARM_L\"";
+            return true;
+        }
+
         moveit::core::RobotState ss(robot_model_);
         ss.setToDefaultValues();
         for (int query_idx = 0; query_idx < req.queries.size(); ++query_idx) {
@@ -1002,19 +1086,16 @@ public:
             ss.update();
             KDL::Frame T_B_T0d;
             tf::transformEigenToKDL( ss.getGlobalLinkTransform("torso_link0"), T_B_T0d);
-            ss.setVariablePosition("torso_0_joint", 0.0);
-            ss.update();
-            KDL::Frame T_B_T0;
-            tf::transformEigenToKDL( ss.getGlobalLinkTransform("torso_link0"), T_B_T0);
 
             KDL::Frame req_T_B_W = pose2KDL( req.queries[query_idx].T_B_W );    
 
-            KDL::Frame T_B_Wr = T_B_T0 * T_B_T0d.Inverse() * req_T_B_W;
+            KDL::Frame T_T0_Wr = T_B_T0d.Inverse() * req_T_B_W;
 
             double max_match_dist = 0.0;
             for (int i = 0; i < directions_.size(); ++i) {
                 KDL::Vector offset = directions_[i] * 0.1;
-                double match_dist = rr_->getMatchDistT( KDL::Frame(T_B_Wr.M, T_B_Wr.p+offset ));
+                double match_dist = rr_->getMatchDistT( KDL::Frame(T_T0_Wr.M, T_T0_Wr.p+offset ),
+                                                                                            side);
                 if (match_dist > max_match_dist) {
                     max_match_dist = match_dist;
                 }
@@ -1032,71 +1113,8 @@ public:
     ~WorkspaceTool() {
     }
 
-    bool reset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
-        res.success = true;
-        return true;
-    }
-
-    bool processWorld(moveit_msgs::ApplyPlanningScene::Request& req, moveit_msgs::ApplyPlanningScene::Response& res) {
-        if (!planning_scene_->processPlanningSceneWorldMsg(req.scene.world)) {
-          ROS_ERROR("Error in processPlanningSceneWorldMsg");
-          res.success = false;
-        }
-        res.success = true;
-        return true;
-    }
-
-    bool plan(moveit_msgs::GetMotionPlan::Request& req, moveit_msgs::GetMotionPlan::Response& res) {
-
-        planning_interface::MotionPlanResponse response;
-
-        planning_interface::MotionPlanRequest request = req.motion_plan_request;
-
-        planning_pipeline_->generatePlan(planning_scene_, request, response);
-
-        response.getMessage( res.motion_plan_response );
-
-        /* Check that the planning was successful */
-        if (response.error_code_.val != response.error_code_.SUCCESS)
-        {
-/*
-            // for debug only:
-            // get the specified start state
-            robot_state::RobotState start_state = planning_scene_->getCurrentState();
-            robot_state::robotStateMsgToRobotState(planning_scene_->getTransforms(), request.start_state, start_state);
-
-            collision_detection::CollisionRequest creq;
-            creq.contacts = true;
-            creq.max_contacts = 100;
-            creq.verbose = true;
-            creq.group_name = request.group_name;
-            collision_detection::CollisionResult cres;
-            planning_scene_->checkCollision(creq, cres, start_state);
-            if (cres.collision) {
-                for (collision_detection::CollisionResult::ContactMap::const_iterator it = cres.contacts.begin(), end = cres.contacts.end(); it != end; ++it) {
-                    ROS_INFO("contacts between %s and %s:", it->first.first.c_str(), it->first.second.c_str());
-                    for (int i = 0; i < it->second.size(); ++i) {
-                        ROS_INFO("%lf  %lf  %lf", it->second[i].pos(0), it->second[i].pos(1), it->second[i].pos(2));
-                    }
-                }
-                ROS_INFO("collision");
-            }
-            else {
-                ROS_INFO("no collision");
-            }
-*/
-          ROS_ERROR("Could not compute plan successfully, error: %d. For more detailed error description please refer to moveit_msgs/MoveItErrorCodes", response.error_code_.val);
-          return false;
-        }
-
-        return true;
-    }
-
     void spin() {
-        while (ros::ok()) {
-            ros::spinOnce();
-            ros::Duration(0.1).sleep();
-        }
+        showReachabilityRange();
     }
 };
 
@@ -1108,5 +1126,3 @@ int main(int argc, char** argv) {
     workspace_tool.spin();
     return 0;
 }
-
-

@@ -1,5 +1,9 @@
 string frame_id
 
+int32 arm_side
+int32 ARM_R = 1
+int32 ARM_L = 2
+
 ReachabilityRangeQuery[] queries
 
 geometry_msgs/Pose T_B_W
