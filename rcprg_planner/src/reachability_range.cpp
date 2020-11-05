@@ -528,7 +528,7 @@ double ReachabilityRange::getMatchDistT(const KDL::Frame& T_T0_W, arm_side side)
 
     const Cell& cell = this->getCellAtPos(T_T0_W_side.p);
     double min_dist = 10000.0;
-    std::cout << "getMatchDistT: samples: " << cell.getSamplesCount() << std::endl;
+    //std::cout << "getMatchDistT: samples: " << cell.getSamplesCount() << std::endl;
     for (int i = 0; i < cell.getSamplesCount(); ++i) {
         KDL::Twist twist = KDL::diff(T_T0_W_side, cell.getSamples()[i].T, 1.0);
         double dist = twist.rot.Norm() + twist.vel.Norm()*10.0;
