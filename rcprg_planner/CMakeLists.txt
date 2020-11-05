@@ -39,7 +39,7 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${Eigen3_INCLUDE_DIRS} ${USE_
 add_executable(rcprg_planner src/planner.cpp)
 target_link_libraries(rcprg_planner ${catkin_LIBRARIES})
 
-add_executable(workspace_tool src/workspace_tool.cpp)
+add_executable(workspace_tool src/workspace_tool.cpp src/reachability_range.cpp)
 target_link_libraries(workspace_tool ${catkin_LIBRARIES})
 
 install(TARGETS rcprg_planner workspace_tool

@@ -31,16 +31,13 @@
 
 #include <math.h>
 #include <mutex>
+#include <sys/stat.h>
 
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <tf2_kdl/tf2_kdl.h>
 //#include "ros/package.h"
 #include <sensor_msgs/JointState.h>
-//#include <visualization_msgs/MarkerArray.h>
-//#include <interactive_markers/interactive_marker_server.h>
-
-//#include "kdl_conversions/kdl_msg.h"
 
 // MoveIt!
 #include <moveit/robot_model_loader/robot_model_loader.h>
@@ -49,24 +46,14 @@
 #include <moveit/planning_pipeline/planning_pipeline.h>
 #include <moveit_msgs/GetMotionPlan.h>
 #include <moveit_msgs/ApplyPlanningScene.h>
-//#include <moveit/robot_state/conversions.h>
 
-//#include <moveit/kinematic_constraints/utils.h>
-//#include <eigen_conversions/eigen_msg.h>
 #include <eigen_conversions/eigen_kdl.h>
 
 #include <string>
-//#include <stdlib.h>
 #include <stdio.h>
-
-//#include "Eigen/Dense"
-//#include "Eigen/LU"
 
 #include <collision_convex_model/collision_convex_model.h>
 #include "kin_dyn_model/kin_model.h"
-//#include "planer_utils/random_uniform.h"
-//#include "planer_utils/utilities.h"
-//#include "planer_utils/double_joint_collision_checker.h"
 #include "std_srvs/Trigger.h"
 
 // plugin for robot interface
@@ -76,6 +63,8 @@
 #include <rcprg_ros_utils/marker_publisher.h>
 
 #include <rcprg_planner_msgs/ReachabilityRange.h>
+
+#include "reachability_range.h"
 
 namespace rcprg_planner {
 
@@ -173,559 +162,6 @@ public:
     }
 };
 
-unsigned char* serialize_double(double d, unsigned char* buf, bool write) {
-    if (write) {
-        *((double*)buf) = d;
-    }
-    buf += sizeof(double);
-    return buf;
-}
-
-unsigned char* deserialize_double(double& d, unsigned char* buf) {
-    d = *((double*)buf);
-    buf += sizeof(double);
-    return buf;
-}
-
-unsigned char* serialize_int(int i, unsigned char* buf, bool write) {
-    if (write) {
-        *((int*)buf) = i;
-    }
-    buf += sizeof(int);
-    return buf;
-}
-
-unsigned char* deserialize_int(int& d, unsigned char* buf) {
-    d = *((int*)buf);
-    buf += sizeof(int);
-    return buf;
-}
-
-unsigned char* serialize_KDL_Rotation(const KDL::Rotation& M, unsigned char* buf, bool write) {
-    double x, y, z, w;
-    M.GetQuaternion(x, y, z, w);
-    buf = serialize_double(x, buf, write);
-    buf = serialize_double(y, buf, write);
-    buf = serialize_double(z, buf, write);
-    buf = serialize_double(w, buf, write);
-    return buf;
-}
-
-unsigned char* deserialize_KDL_Rotation(KDL::Rotation& M, unsigned char* buf) {
-    double x, y, z, w;
-    buf = deserialize_double(x, buf);
-    buf = deserialize_double(y, buf);
-    buf = deserialize_double(z, buf);
-    buf = deserialize_double(w, buf);
-    M = KDL::Rotation::Quaternion(x, y, z, w);
-    return buf;
-}
-
-unsigned char* serialize_KDL_Vector(const KDL::Vector& v, unsigned char* buf, bool write) {
-    buf = serialize_double(v.x(), buf, write);
-    buf = serialize_double(v.y(), buf, write);
-    buf = serialize_double(v.z(), buf, write);
-    return buf;
-}
-
-unsigned char* deserialize_KDL_Vector(KDL::Vector& v, unsigned char* buf) {
-    double x, y, z;
-    buf = deserialize_double(x, buf);
-    buf = deserialize_double(y, buf);
-    buf = deserialize_double(z, buf);
-    v = KDL::Vector(x, y, z);
-    return buf;
-}
-
-unsigned char* serialize_KDL_Frame(const KDL::Frame& T, unsigned char* buf, bool write) {
-    buf = serialize_KDL_Vector(T.p, buf, write);
-    buf = serialize_KDL_Rotation(T.M, buf, write);
-    return buf;
-}
-
-unsigned char* deserialize_KDL_Frame(KDL::Frame& T, unsigned char* buf) {
-    buf = deserialize_KDL_Vector(T.p, buf);
-    buf = deserialize_KDL_Rotation(T.M, buf);
-    return buf;
-}
-
-unsigned char* serialize_arr_int7(const arr_int7& a, unsigned char* buf, bool write) {
-    for (int i = 0; i < 7; ++i) {
-        buf = serialize_int(a[i], buf, write);
-    }
-    return buf;
-}
-
-unsigned char* serialize_vec_int(const std::vector<int >& v, unsigned char* buf, bool write) {
-    buf = serialize_int(v.size(), buf, write);
-    for (int i = 0; i < v.size(); ++i) {
-        buf = serialize_int(v[i], buf, write);
-    }
-    return buf;
-}
-
-unsigned char* deserialize_vec_int(std::vector<int >& v, unsigned char* buf) {
-    int size;
-    buf = deserialize_int(size, buf);
-    v.resize(size);
-    for (int i = 0; i < size; ++i) {
-        int val;
-        buf = deserialize_int(val, buf);
-        v[i] = val;
-    }
-    return buf;
-}
-
-class DiscreteNSpace;
-typedef std::shared_ptr<DiscreteNSpace > DiscreteNSpacePtr;
-class DiscreteNSpace {
-private:
-    int dim_;
-    std::vector<vec_double > slices_;
-public:
-    typedef std::vector<int> Index;
-    typedef std::vector<double> Value;
-
-    DiscreteNSpace(int dim)
-    : dim_(dim)
-    {
-        slices_.resize(dim_);
-    }
-
-    void setSlice(int slice_idx, const vec_double& values) {
-        slices_[slice_idx] = values;
-    }
-
-    int getSpaceSize() const {
-        int result = 1;
-        for (int i = 0; i < dim_; ++i) {
-            result *= slices_[i].size();
-        }
-        return result;
-    }
-
-    int getSlicesCount() const {
-        return dim_;
-    }
-
-    vec_double getSlice(int slice_idx) const {
-        return slices_[slice_idx];
-    }
-
-    Value getIndexValue(const Index& index) const {
-        Value result(dim_);
-        for (int i = 0; i < dim_; ++i) {
-            result[i] = slices_[i][index[i]];
-        }
-        return result;
-    }
-
-    Index getValueIndex(const Value& val) const {
-        Index result(dim_);
-        for (int slice_idx = 0; slice_idx < dim_; ++slice_idx) {
-            double min_dist = 100000.0;
-            for (int idx = 0; idx < slices_[slice_idx].size(); ++idx) {
-                double dist = fabs( slices_[slice_idx][idx] - val[slice_idx] );
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    result[slice_idx] = idx;
-                }
-            }
-        }
-        return result;
-    }
-
-    Index getNextIndex(const Index& index) const {
-        Index result(index);
-        for (int i = 0; i < dim_; ++i) {
-            ++result[i];
-            if (result[i] >= slices_[i].size()) {
-                result[i] = 0;
-            }
-            else {
-                break;
-            }
-        }
-        return result;
-    }
-
-    bool isZeroIndex(const Index& index) const {
-        for (int i = 0; i < dim_; ++i) {
-            if (index[i] != 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    Index getZeroIndex() const {
-        return Index(dim_, 0);
-    }
-
-    unsigned char* serialize(unsigned char* buf, bool write) const {
-        buf = serialize_int( dim_, buf, write );
-        for (int slice_idx = 0; slice_idx < dim_; ++slice_idx) {
-            buf = serialize_int( slices_[slice_idx].size(), buf, write );
-            for (int idx = 0; idx < slices_[slice_idx].size(); ++idx) {
-                buf = serialize_double( slices_[slice_idx][idx], buf, write );
-            }            
-        }
-        return buf;
-    }
-
-    static unsigned char* deserialize(DiscreteNSpacePtr& result, unsigned char* buf) {
-        int dim;
-        buf = deserialize_int( dim, buf );
-        result.reset(new DiscreteNSpace(dim));
-        for (int slice_idx = 0; slice_idx < dim; ++slice_idx) {
-            int slice_size;
-            buf = deserialize_int( slice_size, buf );
-            vec_double values;
-            for (int idx = 0; idx < slice_size; ++idx) {
-                double val;
-                buf = deserialize_double( val, buf );
-                values.push_back( val );
-            }
-            result->setSlice(slice_idx, values) ;
-        }
-        return buf;
-    }
-
-};
-
-class BoundingBox;
-typedef std::shared_ptr<BoundingBox > BoundingBoxPtr;
-
-class BoundingBox {
-public:
-    KDL::Vector min;
-    KDL::Vector max;
-
-    BoundingBox(double xmin, double ymin, double zmin,
-                double xmax, double ymax, double zmax)
-    : min( xmin, ymin, zmin )
-    , max( xmax, ymax, zmax )
-    {}
-
-    BoundingBox(const KDL::Vector& _min, const KDL::Vector& _max)
-    : min( _min )
-    , max( _max )
-    {}
-
-    bool isIn(const KDL::Vector& p) {
-        return  p.x() >= min.x() && p.x() <= max.x() &&
-                p.y() >= min.y() && p.y() <= max.y() &&
-                p.z() >= min.z() && p.z() <= max.z();
-    }
-
-    unsigned char* serialize(unsigned char* buf, bool write) const {
-        buf = serialize_KDL_Vector(min, buf, write);
-        buf = serialize_KDL_Vector(max, buf, write);
-        return buf;
-    }
-
-    static unsigned char* deserialize(BoundingBoxPtr& result, unsigned char* buf) {
-        KDL::Vector _min, _max;
-        buf = deserialize_KDL_Vector(_min, buf);
-        buf = deserialize_KDL_Vector(_max, buf);
-        result.reset(new BoundingBox(_min, _max));
-        return buf;
-    }
-};
-
-class DiscreteSE3;
-typedef std::shared_ptr<DiscreteSE3 > DiscreteSE3Ptr;
-
-class DiscreteSE3 {
-public:
-    typedef std::array<int, 3> Index;
-
-private:
-    BoundingBox bb_;
-    double cell_size_;
-    Index max_index_;
-public:
-    DiscreteSE3(const BoundingBox& bb, double cell_size)
-    : bb_(bb)
-    , cell_size_(cell_size)
-    {
-        KDL::Vector v = bb_.max - bb_.min;
-        max_index_ = Index({
-            int( ceil( v.x()/cell_size_ ) ),
-            int( ceil( v.y()/cell_size_ ) ),
-            int( ceil( v.z()/cell_size_ ) )});
-    }
-
-    Index getCount() const {
-        return Index( {max_index_[0]+1, max_index_[1]+1, max_index_[2]+1} );
-    }
-
-    bool getPosIndex(const KDL::Vector& p, Index& result) const {
-        KDL::Vector v = (p - bb_.min);
-        int ix = int( floor( v.x()/cell_size_ ) );
-        int iy = int( floor( v.y()/cell_size_ ) );
-        int iz = int( floor( v.z()/cell_size_ ) );
-        if (ix >= 0 && ix < max_index_[0] &&
-                iy >= 0 && iy < max_index_[1] &&
-                iz >= 0 && iz < max_index_[2]) {
-            result = Index({ix, iy, iz});
-            return true;
-        }
-        return false;
-    }
-
-    KDL::Vector getIndexValue(const Index& index) const {
-        return bb_.min + KDL::Vector(
-            double(index[0])+0.5, double(index[1])+0.5, double(index[2])+0.5) * cell_size_;
-    }
-
-    Index getNextIndex(const Index& index) const {
-        Index result(index);
-        for (int i = 0; i < 3; ++i) {
-            ++result[i];
-            if (result[i] > max_index_[i]) {
-                result[i] = 0;
-            }
-            else {
-                break;
-            }
-        }
-        return result;
-    }
-
-    bool isZeroIndex(const Index& index) const {
-        for (int i = 0; i < 3; ++i) {
-            if (index[i] != 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    Index getZeroIndex() const {
-        Index result;
-        for (int i = 0; i < 3; ++i) {
-            result[i] = 0;
-        }
-        return result;
-    }
-
-    unsigned char* serialize(unsigned char* buf, bool write) const {
-        buf = bb_.serialize(buf, write);
-        buf = serialize_double( cell_size_, buf, write );
-        return buf;
-    }
-
-    static unsigned char* deserialize(DiscreteSE3Ptr& result, unsigned char* buf) {
-        BoundingBoxPtr bb;
-        buf = BoundingBox::deserialize(bb, buf);
-        double cell_size;
-        buf = deserialize_double(cell_size, buf);
-        result.reset(new DiscreteSE3(*bb, cell_size));
-        return buf;
-    }
-
-};
-
-/*
-\  0  1  2
- ---------
-0| 0  1  2
-1| 3  4  5
-2| 6  7  8
-3| 9 10 11
-size = [3,4]
-idx = [1,2]
-offs = 1 + 2*3
-*/
-
-class ReachabilityRange;
-typedef std::shared_ptr<ReachabilityRange > ReachabilityRangePtr;
-
-class ReachabilityRange {
-public:
-    class Sample {
-    public:
-        KDL::Frame T;
-        DiscreteNSpace::Index q;
-
-        Sample() {}
-
-        Sample(const DiscreteNSpace::Index& _q, const KDL::Frame& _T)
-        : T(_T)
-        , q(_q)
-        {}
-
-        unsigned char* serialize(unsigned char* buf, bool write) const {
-            buf = serialize_KDL_Frame(T, buf, write);
-            buf = serialize_vec_int(q, buf, write);
-            return buf;
-        }
-
-        static unsigned char* deserialize(Sample& result, unsigned char* buf) {
-            buf = deserialize_KDL_Frame(result.T, buf);
-            buf = deserialize_vec_int(result.q, buf);
-            return buf;
-        }
-    };
-
-    class Cell {
-    private:
-        std::vector<Sample > samples_;
-    public:
-        void addSample(const DiscreteNSpace::Index& q, const KDL::Frame& T) {
-            samples_.push_back( Sample(q, T) );
-        }
-
-        int getSamplesCount() const {
-            return samples_.size();
-        }
-
-        const std::vector<Sample >& getSamples() const {
-            return samples_;
-        }
-    };
-private:
-
-    DiscreteNSpace dspace_conf_;
-    DiscreteSE3 dspace_se3_;
-    DiscreteSE3::Index se3_size_;
-    std::vector<Cell > cells_;
-    Cell null_cell_;
-    int total_samples_;
-
-    int idx2off(const DiscreteSE3::Index& index) const {
-        return index[0] + se3_size_[0] * (index[1] + se3_size_[1]*index[2]);
-    }
-public:
-    enum arm_side {ARM_R, ARM_L};
-
-    ReachabilityRange(const DiscreteNSpace& dspace_conf, const DiscreteSE3& dspace_se3)
-    : dspace_conf_( dspace_conf )
-    , dspace_se3_( dspace_se3 )
-    , se3_size_( dspace_se3.getCount() )
-    , total_samples_(0)
-    {
-        cells_.resize( se3_size_[0] * se3_size_[1] * se3_size_[2] );
-    }
-
-    void addPoint(const DiscreteNSpace::Index& q, const KDL::Frame& T) {
-        DiscreteSE3::Index index;
-        if (dspace_se3_.getPosIndex( T.p, index )) {
-            cells_[idx2off(index)].addSample(q, T);
-            ++total_samples_;
-        }
-    }
-
-    void addPoint(const Sample& sample) {
-        this->addPoint(sample.q, sample.T);
-    }
-
-    const Cell& getCellAtIndex(const DiscreteSE3::Index& index) const {
-        return cells_[idx2off(index)];
-    }
-
-    const Cell& getCellAtPos(const KDL::Vector& pos) const {
-        DiscreteSE3::Index index;
-        if (!dspace_se3_.getPosIndex(pos, index)) {
-            return null_cell_;
-        }
-        return this->getCellAtIndex(index);
-    }
-
-    double getMatchDistQ(const DiscreteNSpace::Value& _q, const KDL::Frame& T_T0_W, arm_side side) {
-        double side_factor;
-        KDL::Frame T_T0_W_side;
-        if (side == ARM_R) {
-            T_T0_W_side = T_T0_W;
-            side_factor = 1;
-        }
-        else {
-            T_T0_W_side = KDL::Frame(KDL::Rotation::RotX(PI)*T_T0_W.M,
-                                        KDL::Vector(T_T0_W.p.x(), -T_T0_W.p.y(), T_T0_W.p.z()));
-            side_factor = -1;
-        }
-
-        const Cell& cell = this->getCellAtPos(T_T0_W_side.p);
-        double min_dist = 10000.0;
-        for (int i = 0; i < cell.getSamplesCount(); ++i) {
-            //KDL::Twist twist = KDL::diff(T, cell.getSamples()[i].T, 1.0);
-            double q_dist = 0;
-            DiscreteNSpace::Value q_cell = dspace_conf_.getIndexValue( cell.getSamples()[i].q );
-            for (int j = 0; j < _q.size(); ++j) {
-                q_dist += (q_cell[j]-side_factor*_q[j])*(q_cell[j]-side_factor*_q[j]);
-            }
-            //double dist = twist.rot.Norm() + twist.vel.Norm()*10.0 + sqrt(q_dist);
-            double dist = sqrt(q_dist);
-            if (dist < min_dist) {
-                min_dist = dist;
-            }
-        }
-        return min_dist;
-    }
-
-    double getMatchDistT(const KDL::Frame& T_T0_W, arm_side side) {
-        KDL::Frame T_T0_W_side;
-        if (side == ARM_R) {
-            T_T0_W_side = T_T0_W;
-        }
-        else {
-            T_T0_W_side = KDL::Frame(KDL::Rotation::RotX(PI)*T_T0_W.M,
-                                        KDL::Vector(T_T0_W.p.x(), -T_T0_W.p.y(), T_T0_W.p.z()));
-        }
-
-        const Cell& cell = this->getCellAtPos(T_T0_W_side.p);
-        double min_dist = 10000.0;
-        std::cout << "getMatchDistT: samples: " << cell.getSamplesCount() << std::endl;
-        for (int i = 0; i < cell.getSamplesCount(); ++i) {
-            KDL::Twist twist = KDL::diff(T_T0_W_side, cell.getSamples()[i].T, 1.0);
-            double dist = twist.rot.Norm() + twist.vel.Norm()*10.0;
-            if (dist < min_dist) {
-                min_dist = dist;
-            }
-        }
-        return min_dist;
-    }
-
-    int getSamplesCount() const {
-        return total_samples_;
-    }
-
-    const DiscreteSE3& getSE3() const {
-        return this->dspace_se3_;
-    }
-
-    unsigned char* serialize(unsigned char* buf, bool write) const {
-        buf = dspace_conf_.serialize(buf, write);
-        buf = dspace_se3_.serialize(buf, write);
-        buf = serialize_int( this->getSamplesCount(), buf, write );
-        for (int cell_idx = 0; cell_idx < cells_.size(); ++cell_idx) {
-            for (int sample_idx = 0; sample_idx < cells_[cell_idx].getSamplesCount();
-                                                                                ++sample_idx) {
-                buf = cells_[cell_idx].getSamples()[sample_idx].serialize(buf, write);
-            }
-        }
-        return buf;
-    }
-
-    static unsigned char* deserialize(ReachabilityRangePtr& result, unsigned char* buf) {
-        DiscreteNSpacePtr dspace_conf;
-        buf = DiscreteNSpace::deserialize(dspace_conf, buf);
-        DiscreteSE3Ptr dspace_se3;
-        buf = DiscreteSE3::deserialize(dspace_se3, buf);
-        int samples_count;
-        buf = deserialize_int( samples_count, buf );
-
-        result.reset(new ReachabilityRange(*dspace_conf, *dspace_se3));
-        for (int sample_idx = 0; sample_idx < samples_count; ++sample_idx) {
-            Sample sample;
-            buf = Sample::deserialize( sample, buf );
-            result->addPoint( sample );
-        }
-        return buf;
-    }
-};
-
 class WorkspaceTool {
 private:
     ros::NodeHandle nh_;
@@ -756,6 +192,8 @@ private:
     std::mutex current_joint_states_ptr_mutex_;
 
     std::vector<KDL::Vector > directions_;
+
+    std::string map_filepath_;
 
 public:
 
@@ -831,6 +269,43 @@ public:
         return rr;
     }
 
+    bool canReadFile(const std::string& filepath) const {
+        if (FILE *file = fopen(filepath.c_str(), "rb")) {
+            fclose(file);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool canWriteFile(const std::string& filepath) const {
+        if (FILE *file = fopen(filepath.c_str(), "w")) {
+            fclose(file);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    std::string extractDirName(const std::string& filepath) const {
+        size_t pos = filepath.rfind("/");
+        std::string result = filepath;
+        result.resize(pos);
+        return result;
+    }
+
+    /*
+    bool createDirectoryForFile(const std::string& filepath) const {
+        std::vector<
+        std::string dir = extractDirName(filepath);
+        if (mkdir(dir.c_str(), 0744) == -1) {
+            std::cout<< "Error :  " << strerror(errno) << std::endl;
+        }
+        else {
+            std::cout << "Directory created" << std::endl; 
+        }
+    }
+    */
     WorkspaceTool()
         : nh_("workspace_tool")
         , mp_(nh_, "/velma/current_reachability")
@@ -840,21 +315,28 @@ public:
         nh_.getParam("robot_interface_plugin", robot_interface_plugin_str_);
         if (robot_interface_plugin_str_.empty()) {
             ROS_ERROR("The ROS parameter \"robot_interface_plugin\" is empty");
-            return;
+            throw std::invalid_argument("The ROS parameter \"robot_interface_plugin\" is empty");
         }
         ROS_INFO("Trying to load plugin: \"%s\"", robot_interface_plugin_str_.c_str());
 
-        try
-        {
+        //try
+        //{
+        // If this fails, there is nothing more to do
             robot_interface_ = robot_interface_loader_.createInstance(robot_interface_plugin_str_);
             ROS_INFO("Loaded plugin: \"%s\"", robot_interface_plugin_str_.c_str());
             //ROS_INFO("loaded velma_ros_plugin::VelmaInterface");
-        }
-        catch(pluginlib::PluginlibException& ex)
-        {
-            //handle the class failing to load
-            ROS_ERROR("The plugin failed to load for some reason. Error: %s", ex.what());
-            return;
+        //}
+        //catch(pluginlib::PluginlibException& ex)
+        //{
+        //    //handle the class failing to load
+        //    ROS_ERROR("The plugin failed to load for some reason. Error: %s", ex.what());
+        //    return;
+        //}
+
+        nh_.getParam("map_filepath", map_filepath_);
+        if (map_filepath_.empty()) {
+            ROS_ERROR("The ROS parameter \"map_filepath\" is empty");
+            throw std::invalid_argument("The ROS parameter \"map_filepath\" is empty");
         }
 
         getUniformDirections(35.0/180.0*PI, directions_);
@@ -881,17 +363,40 @@ public:
         planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
 
 
-        const std::string rr_filename = "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_medium";
+        //const std::string rr_filename = "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_medium";
         //rr_ = createModel();
         //saveModel(rr_filename, rr);
 
-        const std::string rr_saved_filename =
-                "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_big";
-        std::cout << "Loading ReachabilityRange from file \"" << rr_saved_filename << "\"..."
-                                                                                    << std::endl;
-        rr_ = loadModel(rr_saved_filename);
-        std::cout << "Loaded ReachabilityRange, number of samples: " << rr_->getSamplesCount()
-                                                                                    << std::endl;
+        //const std::string rr_saved_filename =
+        //        "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_big";
+        //std::cout << "Loading ReachabilityRange from file \"" << rr_saved_filename << "\"..."
+        //                                                                            << std::endl;
+
+        if (canReadFile(map_filepath_)) {
+            std::cout << "Loading ReachabilityRange from file \""
+                        << map_filepath_ << "\"" << std::endl;
+            rr_ = loadModel(map_filepath_);
+            std::cout << "Loaded ReachabilityRange, number of samples: "
+                        << rr_->getSamplesCount() << std::endl;
+        }
+        else {
+            std::cout << "There is no file \""
+                        << map_filepath_ << "\", need to compute the map" << std::endl;
+
+            //if (!canWriteFile(map_filepath_)) {
+            //    std::cout << "Trying to create directory..." << std::endl;
+            //    createDirectoryForFile(map_filepath_);
+            //}
+            if (canWriteFile(map_filepath_)) {
+                rr_ = createModel();
+                saveModel(map_filepath_, rr_);
+            }
+            else {
+                std::cout << "The file \""
+                            << map_filepath_ << "\" cannot be written" << std::endl;
+                throw std::invalid_argument("Could not write map file");
+            }
+        }
         // Everything is initialize, so start services and spinning
         service_reacahbility_range_ = nh_.advertiseService("reachability_range",
                                                 &WorkspaceTool::reachabilityRangeService, this);
