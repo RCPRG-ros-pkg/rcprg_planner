@@ -361,8 +361,9 @@ public:
         planning_scene_->setStateFeasibilityPredicate( boost::bind(&RobotInterface::isStateValid, robot_interface_.get(), _1, _2) );
 
         planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
+    }
 
-
+    bool initialize() {
         //const std::string rr_filename = "/home/dseredyn/ws_velma_2019_11/ws_velma_os/rr_map_new_medium";
         //rr_ = createModel();
         //saveModel(rr_filename, rr);
@@ -392,14 +393,18 @@ public:
                 saveModel(map_filepath_, rr_);
             }
             else {
-                std::cout << "The file \""
+                std::cout << "ERROR: The file \""
                             << map_filepath_ << "\" cannot be written" << std::endl;
-                throw std::invalid_argument("Could not write map file");
+                std::cout << "You need to create the full path for file " << map_filepath_
+                                                                                << std::endl;
+                return false;
+                //throw std::invalid_argument("Could not write map file");
             }
         }
-        // Everything is initialize, so start services and spinning
+        // Everything is initialized, so start services and spinning
         service_reacahbility_range_ = nh_.advertiseService("reachability_range",
                                                 &WorkspaceTool::reachabilityRangeService, this);
+        return true;
     }
 
     void saveData(const std::string& filename, const unsigned char* buf, int size) {
@@ -628,6 +633,10 @@ public:
 int main(int argc, char** argv) {
     ros::init(argc, argv, "rcprg_workspace_tool");
     rcprg_planner::WorkspaceTool workspace_tool;
+    if (!workspace_tool.initialize()) {
+        std::cout << "ERROR: Could not initialize the WorkspaceTool" << std::endl;
+        return 1;
+    }
     workspace_tool.spin();
     return 0;
 }
