@@ -166,7 +166,43 @@ left_arm:
     - RRTConnect
     - RRTstar
   longest_valid_segment_fraction: 0.01
+left_arm_torso:
+  planner_configs:
+    - SBLkConfigDefault
+    - ESTkConfigDefault
+    - LBKPIECEkConfigDefault
+    - BKPIECEkConfigDefault
+    - KPIECEkConfigDefault
+    - RRTkConfigDefault
+    - RRTConnectkConfigDefault
+    - RRTstarkConfigDefault
+    - TRRTkConfigDefault
+    - PRMkConfigDefault
+    - PRMstarkConfigDefault
+    - RRT
+    - FMT
+    - RRTConnect
+    - RRTstar
+  longest_valid_segment_fraction: 0.01
 right_arm:
+  planner_configs:
+    - SBLkConfigDefault
+    - ESTkConfigDefault
+    - LBKPIECEkConfigDefault
+    - BKPIECEkConfigDefault
+    - KPIECEkConfigDefault
+    - RRTkConfigDefault
+    - RRTConnectkConfigDefault
+    - RRTstarkConfigDefault
+    - TRRTkConfigDefault
+    - PRMkConfigDefault
+    - PRMstarkConfigDefault
+    - RRT
+    - FMT
+    - RRTConnect
+    - RRTstar
+  longest_valid_segment_fraction: 0.01
+right_arm_torso:
   planner_configs:
     - SBLkConfigDefault
     - ESTkConfigDefault
