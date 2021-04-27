@@ -31,13 +31,18 @@
 import time
 import rospy
 import copy
+import math
 
-from moveit_msgs.msg import RobotTrajectory, JointConstraint, Constraints, MotionPlanRequest
+import PyKDL
+import tf
+from moveit_msgs.msg import RobotTrajectory, JointConstraint, Constraints, MotionPlanRequest,\
+    OrientationConstraint
 from moveit_msgs.srv import GetMotionPlan, GetMotionPlanRequest, ApplyPlanningScene,\
     ApplyPlanningSceneRequest
 from trajectory_msgs.msg import JointTrajectory
 from threading import RLock
 from octomap_msgs.msg import Octomap
+import tf_conversions.posemath as pm
 
 def qMapToConstraints(q_map, tolerance=0.01, group=None):
     """!
@@ -120,7 +125,7 @@ class Planner:
                     path_constraints=None, trajectory_constraints=None, workspace_parameters=None,
                     planner_id=None, num_planning_attempts=1,
                     allowed_planning_time=10.0, max_velocity_scaling_factor=1.0,
-                    max_acceleration_scaling_factor=1.0):
+                    max_acceleration_scaling_factor=1.0, keep_upright=None):
         """!
         Plan motion in joint space.
 
@@ -168,6 +173,65 @@ class Planner:
 
         if planner_id:
             req.planner_id = planner_id
+
+        if not keep_upright is None:
+            current_time = rospy.Time.now()
+            #if keep_upright_side is None:
+            #    raise Exception('"keep_upright_side" argument must be specified')
+            #if keep_upright_side == 'left':
+            #    sides = ['left']
+            #elif keep_upright_side == 'right':
+            #    sides = ['right']
+            #elif keep_upright_side == 'both':
+            #    sides = ['left', 'right']
+            #else:
+            #    raise Exception('Wrong value of "keep_upright_side" argument: "{}", must be one of: left, right, both'.format(
+            #                                                                keep_upright_side))
+            for side_str, T_B_E in keep_upright.iteritems():
+                assert isinstance(T_B_E, PyKDL.Frame)
+                # This message contains the definition of an orientation constraint.
+                ori_constr = OrientationConstraint()
+                ori_constr.header.frame_id = 'world'
+
+                # The robot link this constraint refers to
+                ori_constr.link_name = '{}_arm_7_link'.format( side_str )
+
+                #try:
+                #self._listener.waitForTransform('torso_base', ori_constr.link_name,
+                #                                            current_time, rospy.Duration(5.0))
+                #pose = self._listener.lookupTransform('torso_base', ori_constr.link_name,
+                #                                                                current_time)
+                #except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException,
+                #        tf2_ros.TransformException):
+                #    pose = None
+                #T_B_E = pm.fromTf(pose)
+                qx, qy, qz, qw = T_B_E.M.GetQuaternion()
+                # The desired orientation of the robot link specified as a quaternion
+                ori_constr.orientation.x = qx
+                ori_constr.orientation.y = qy
+                ori_constr.orientation.z = qz
+                ori_constr.orientation.w = qw
+
+                # Tolerance on the three vector components of the orientation error (optional)
+                ori_constr.absolute_x_axis_tolerance = math.radians(30.0)
+                ori_constr.absolute_y_axis_tolerance = math.radians(30.0)
+                ori_constr.absolute_z_axis_tolerance = math.radians(200.0)
+
+                # Defines how the orientation error is calculated
+                # The error is compared to the tolerance defined above
+                #ori_constr.parameterization = OrientationConstraint.XYZ_EULER_ANGLES
+
+                # The different options for the orientation error parameterization
+                # - Intrinsic xyz Euler angles (default value)
+                #uint8 XYZ_EULER_ANGLES=0
+                # - A rotation vector. This is similar to the angle-axis representation,
+                # but the magnitude of the vector represents the rotation angle.
+                #uint8 ROTATION_VECTOR=1
+
+                # A weighting factor for this constraint (denotes relative importance to other constraints. Closer to zero means less important)
+                ori_constr.weight = 1.0
+
+                req.path_constraints.orientation_constraints.append( ori_constr )
 
         req.num_planning_attempts = num_planning_attempts
 
@@ -261,6 +325,7 @@ class Planner:
         @param max_traj_len int: Maximum number of nodes in a planned trajectory.
         """
         self._max_traj_len = max_traj_len
+        self._listener = tf.TransformListener()
 
     def waitForInit(self, timeout_s=None):
         """!
