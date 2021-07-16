@@ -173,7 +173,7 @@ private:
     ReachabilityRangePtr rr_;
 
     std::string robot_description_str_;
-    std::string robot_semantic_description_str_;
+    std::string robot_description_semantic_str_;
 
     boost::shared_ptr<KinematicModel > kin_model_;
 
@@ -343,7 +343,7 @@ public:
         std::cout << "Using directions: " << directions_.size() << std::endl;
 
         nh_.getParam("/robot_description", robot_description_str_);
-        nh_.getParam("/robot_semantic_description", robot_semantic_description_str_);
+        nh_.getParam("/robot_description_semantic", robot_description_semantic_str_);
 
         std::string xml_out;
         self_collision::CollisionModel::convertSelfCollisionsInURDF(robot_description_str_, xml_out);
@@ -353,7 +353,7 @@ public:
         //
         // moveit
         //
-        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(xml_out, robot_semantic_description_str_) );
+        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(xml_out, robot_description_semantic_str_) );
         robot_model_ = robot_model_loader.getModel();
 
         planning_scene_.reset( new planning_scene::PlanningScene(robot_model_) );

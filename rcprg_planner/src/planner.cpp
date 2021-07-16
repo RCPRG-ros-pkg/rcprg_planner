@@ -80,7 +80,7 @@ private:
     //KDL::Frame int_marker_pose_;
 
     std::string robot_description_str_;
-    std::string robot_semantic_description_str_;
+    std::string robot_description_semantic_str_;
 
     //boost::shared_ptr<self_collision::CollisionModel> col_model_;
     //boost::shared_ptr<KinematicModel > kin_model_;
@@ -133,7 +133,7 @@ public:
         service_processWorld_ = nh_.advertiseService("processWorld", &Planner::processWorld, this);
 
         nh_.getParam("/robot_description", robot_description_str_);
-        nh_.getParam("/robot_semantic_description", robot_semantic_description_str_);
+        nh_.getParam("/robot_description_semantic", robot_description_semantic_str_);
 
         std::string xml_out;
         self_collision::CollisionModel::convertSelfCollisionsInURDF(robot_description_str_, xml_out);
@@ -141,7 +141,7 @@ public:
         //
         // moveit
         //
-        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(xml_out, robot_semantic_description_str_) );
+        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(xml_out, robot_description_semantic_str_) );
         robot_model_ = robot_model_loader.getModel();
 
         planning_scene_.reset( new planning_scene::PlanningScene(robot_model_) );
@@ -166,7 +166,7 @@ public:
             std::cout << it->first << " " << it->second.name << std::endl;
         }
 */
-//        robot_model_loader_.reset( new robot_model_loader::RobotModelLoader(robot_model_loader::RobotModelLoader::Options(robot_description_str_, robot_semantic_description_str_)) );
+//        robot_model_loader_.reset( new robot_model_loader::RobotModelLoader(robot_model_loader::RobotModelLoader::Options(robot_description_str_, robot_description_semantic_str_)) );
 //        planning_scene_monitor_.reset( new planning_scene_monitor::PlanningSceneMonitor(robot_model_loader_) );
 //        planning_scene_monitor_->getRobotModel();
 
