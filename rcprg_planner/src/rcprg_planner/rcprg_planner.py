@@ -261,6 +261,14 @@ class Planner:
         return res.trajectory.joint_trajectory
 
     def splitTrajectory(self, joint_trajectory, max_traj_len):
+        """!
+        Split a long trajectory into a number of shorter trajectories.
+
+        @param joint_trajectory         trajectory_msgs.msg.JointTrajectory: A joint trajectory to be splitted.
+        @param max_traj_len             int: Maximum number of nodes in the result trajectory.
+        @return Returns list of trajectory_msgs.msg.JointTrajectory -- the input trajectory split
+        into a number of trajectories of length not greater than max_traj_len.
+        """
         assert isinstance(joint_trajectory, JointTrajectory)
         if len(joint_trajectory.points) > max_traj_len:
             result = []
