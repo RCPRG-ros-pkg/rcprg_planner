@@ -75,20 +75,8 @@ private:
     ros::ServiceServer service_plan_;
     ros::ServiceServer service_processWorld_;
 
-    //const double PI;
-
-    //KDL::Frame int_marker_pose_;
-
     std::string robot_description_str_;
     std::string robot_description_semantic_str_;
-
-    //boost::shared_ptr<self_collision::CollisionModel> col_model_;
-    //boost::shared_ptr<KinematicModel > kin_model_;
-    //std::vector<KDL::Frame > links_fk_;
-
-
-//    robot_model_loader::RobotModelLoaderPtr robot_model_loader_;
-//    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
 
     robot_model::RobotModelPtr robot_model_;
     planning_scene::PlanningScenePtr planning_scene_;
@@ -98,15 +86,12 @@ private:
     std::string robot_interface_plugin_str_;
 
     // ROS pluginlib
-    pluginlib::ClassLoader<RobotInterface> robot_interface_loader_;
     boost::shared_ptr<RobotInterface> robot_interface_;
 
 public:
     Planner()
         : nh_("rcprg_planner")
-        , robot_interface_loader_("rcprg_planner", "rcprg_planner::RobotInterface")
     {
-
         nh_.getParam("robot_interface_plugin", robot_interface_plugin_str_);
         if (robot_interface_plugin_str_.empty()) {
             ROS_ERROR("The ROS parameter \"robot_interface_plugin\" is empty");
@@ -116,7 +101,9 @@ public:
 
         try
         {
-            robot_interface_ = robot_interface_loader_.createInstance(robot_interface_plugin_str_);
+            pluginlib::ClassLoader<RobotInterface> robot_interface_loader("rcprg_planner", "rcprg_planner::RobotInterface");
+
+            robot_interface_ = robot_interface_loader.createInstance(robot_interface_plugin_str_);
             ROS_INFO("Loaded plugin: \"%s\"", robot_interface_plugin_str_.c_str());
             //ROS_INFO("loaded velma_ros_plugin::VelmaInterface");
         }
@@ -126,7 +113,6 @@ public:
             ROS_ERROR("The plugin failed to load for some reason. Error: %s", ex.what());
             return;
         }
-
 
         service_reset_ = nh_.advertiseService("reset", &Planner::reset, this);
         service_plan_ = nh_.advertiseService("plan", &Planner::plan, this);
