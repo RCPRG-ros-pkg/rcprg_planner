@@ -176,17 +176,6 @@ class Planner:
 
         if not keep_upright is None:
             current_time = rospy.Time.now()
-            #if keep_upright_side is None:
-            #    raise Exception('"keep_upright_side" argument must be specified')
-            #if keep_upright_side == 'left':
-            #    sides = ['left']
-            #elif keep_upright_side == 'right':
-            #    sides = ['right']
-            #elif keep_upright_side == 'both':
-            #    sides = ['left', 'right']
-            #else:
-            #    raise Exception('Wrong value of "keep_upright_side" argument: "{}", must be one of: left, right, both'.format(
-            #                                                                keep_upright_side))
             for side_str, T_B_E in keep_upright.iteritems():
                 assert isinstance(T_B_E, PyKDL.Frame)
                 # This message contains the definition of an orientation constraint.
