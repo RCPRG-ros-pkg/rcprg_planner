@@ -92,6 +92,7 @@ public:
     Planner()
         : nh_("rcprg_planner")
     {
+        std::cout << "namespace: \"" << nh_.getNamespace() << "\"" << std::endl;
         nh_.getParam("robot_interface_plugin", robot_interface_plugin_str_);
         if (robot_interface_plugin_str_.empty()) {
             ROS_ERROR("The ROS parameter \"robot_interface_plugin\" is empty");

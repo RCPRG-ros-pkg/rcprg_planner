@@ -117,6 +117,37 @@ class OctomapListener:
                     return None
         return None
 
+def wrapAngle(angle):
+    return (angle + math.pi) % (2 * math.pi) - math.pi
+
+def keepUprightIk(T_B_E):
+    epsilon = 0.001
+    v_B = PyKDL.Vector(0, 0, 1)
+    v_E = T_B_E.M.Inverse() * v_B
+    print('v_E: {}'.format(v_E))
+    if abs(v_E.x()) < epsilon and abs(v_E.y()) < epsilon:
+        q0 = 0.0
+    else:
+        q0 = wrapAngle( math.atan2(v_E.y(), v_E.x()) + math.pi/2 )
+
+    T_E_U1 = PyKDL.Frame( PyKDL.Rotation.RotZ(q0), PyKDL.Vector() )
+    T_B_U1 = T_B_E * T_E_U1
+    v_U1 = T_B_U1.M.Inverse() * v_B
+    print('v_U1: {}'.format(v_U1))
+    if abs(v_U1.y()) < epsilon and abs(v_U1.z()) < epsilon:
+        q1 = 0.0
+    else:
+        q1 = wrapAngle( math.atan2(v_U1.z(), v_U1.y()) + math.pi/2 )
+
+    T_U1_U2 = PyKDL.Frame( PyKDL.Rotation.RotY(math.pi/2)*PyKDL.Rotation.RotZ(q1), PyKDL.Vector() )
+    T_B_U2 = T_B_U1 * T_U1_U2
+    return q0, q1, T_B_U2
+
+def printFrame(T):
+    q = T.M.GetQuaternion()
+    print('PyKDL.Frame(PyKDL.Rotation.Quaternion({}, {}, {}, {}), PyKDL.Vector({}, {}, {}))'.format(
+            q[0], q[1], q[2], q[3], T.p.x(), T.p.y(), T.p.z()))
+
 class Planner:
     """!
     Class used as planner interface.
@@ -148,8 +179,17 @@ class Planner:
         """
         req = MotionPlanRequest()
 
-        joint_names = []
-        for joint_name in q_start:
+        q_start = copy.copy(q_start)
+        if not 'leftKeepUprightJoint0' in q_start:
+            q_start['leftKeepUprightJoint0'] = 0.0
+        if not 'leftKeepUprightJoint1' in q_start:
+            q_start['leftKeepUprightJoint1'] = 0.0
+        if not 'rightKeepUprightJoint0' in q_start:
+            q_start['rightKeepUprightJoint0'] = 0.0
+        if not 'rightKeepUprightJoint1' in q_start:
+            q_start['rightKeepUprightJoint1'] = 0.0
+
+        for joint_name in sorted(q_start.keys()):
             req.start_state.joint_state.name.append( joint_name )
             req.start_state.joint_state.position.append( q_start[joint_name] )
 
@@ -178,23 +218,46 @@ class Planner:
             current_time = rospy.Time.now()
             for side_str, T_B_E in keep_upright.iteritems():
                 assert isinstance(T_B_E, PyKDL.Frame)
+
+                q_ku0, q_ku1, T_B_U2 = keepUprightIk(T_B_E)
+                #print('keep upright ik: {}, {}'.format(start_q['leftKeepUprightJoint0'], start_q['leftKeepUprightJoint1']))
+
+                q_ku0_name = '{}KeepUprightJoint0'.format(side_str)
+                q_ku1_name = '{}KeepUprightJoint1'.format(side_str)
+
+                # Update keep upright joints
+                for q_idx, joint_name in enumerate(req.start_state.joint_state.name):
+                    if joint_name == q_ku0_name:
+                        req.start_state.joint_state.position[q_idx] = q_ku0
+                    elif joint_name == q_ku1_name:
+                        req.start_state.joint_state.position[q_idx] = q_ku1
+
+                for goal_constr in req.goal_constraints:
+                    for joint_constr in goal_constr.joint_constraints:
+                        if joint_constr.joint_name == q_ku0_name:
+                            joint_constr.position = q_ku0
+                        elif joint_constr.joint_name == q_ku1_name:
+                            joint_constr.position = q_ku1
+
+                dbg_str = '{'
+                for q_idx, joint_name in enumerate(req.start_state.joint_state.name):
+                    dbg_str += '\'{}\':{},'.format(joint_name, req.start_state.joint_state.position[q_idx])
+                dbg_str += '}'
+                print('start_q: {}'.format(dbg_str))
+                print('T_B_E:')
+                printFrame(T_B_E)
+                print('T_B_U2:')
+                printFrame(T_B_U2)
+
                 # This message contains the definition of an orientation constraint.
                 ori_constr = OrientationConstraint()
                 ori_constr.header.frame_id = 'world'
 
                 # The robot link this constraint refers to
-                ori_constr.link_name = '{}_arm_7_link'.format( side_str )
+                #ori_constr.link_name = '{}_arm_7_link'.format( side_str )
+                ori_constr.link_name = '{}_keepUprightLink2'.format( side_str )
 
-                #try:
-                #self._listener.waitForTransform('torso_base', ori_constr.link_name,
-                #                                            current_time, rospy.Duration(5.0))
-                #pose = self._listener.lookupTransform('torso_base', ori_constr.link_name,
-                #                                                                current_time)
-                #except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException,
-                #        tf2_ros.TransformException):
-                #    pose = None
-                #T_B_E = pm.fromTf(pose)
-                qx, qy, qz, qw = T_B_E.M.GetQuaternion()
+                qx, qy, qz, qw = T_B_U2.M.GetQuaternion()
                 # The desired orientation of the robot link specified as a quaternion
                 ori_constr.orientation.x = qx
                 ori_constr.orientation.y = qy
@@ -202,25 +265,26 @@ class Planner:
                 ori_constr.orientation.w = qw
 
                 # Tolerance on the three vector components of the orientation error (optional)
-                ori_constr.absolute_x_axis_tolerance = math.radians(30.0)
-                ori_constr.absolute_y_axis_tolerance = math.radians(30.0)
-                ori_constr.absolute_z_axis_tolerance = math.radians(200.0)
+                #ori_constr.absolute_x_axis_tolerance = math.radians(30.0)
+                #ori_constr.absolute_y_axis_tolerance = math.radians(30.0)
+                #ori_constr.absolute_z_axis_tolerance = math.radians(200.0)
 
-                # Defines how the orientation error is calculated
-                # The error is compared to the tolerance defined above
-                #ori_constr.parameterization = OrientationConstraint.XYZ_EULER_ANGLES
-
-                # The different options for the orientation error parameterization
-                # - Intrinsic xyz Euler angles (default value)
-                #uint8 XYZ_EULER_ANGLES=0
-                # - A rotation vector. This is similar to the angle-axis representation,
-                # but the magnitude of the vector represents the rotation angle.
-                #uint8 ROTATION_VECTOR=1
+                ori_constr.absolute_x_axis_tolerance = math.radians(200.0)
+                ori_constr.absolute_y_axis_tolerance = math.radians(40.0)
+                ori_constr.absolute_z_axis_tolerance = math.radians(40.0)
 
                 # A weighting factor for this constraint (denotes relative importance to other constraints. Closer to zero means less important)
                 ori_constr.weight = 1.0
 
                 req.path_constraints.orientation_constraints.append( ori_constr )
+
+                ori_constr_goal = copy.copy(ori_constr)
+                ori_constr_goal.absolute_x_axis_tolerance = math.radians(200.0)
+                ori_constr_goal.absolute_y_axis_tolerance = math.radians(30.0)
+                ori_constr_goal.absolute_z_axis_tolerance = math.radians(30.0)
+
+                for goal_constr in req.goal_constraints:
+                    goal_constr.orientation_constraints.append(ori_constr_goal)
 
         req.num_planning_attempts = num_planning_attempts
 
@@ -229,6 +293,9 @@ class Planner:
         req.max_velocity_scaling_factor = max_velocity_scaling_factor
 
         req.max_acceleration_scaling_factor = max_acceleration_scaling_factor
+
+        #print('*** Planning request: ***')
+        #print(req)
 
         request = GetMotionPlanRequest()
         request.motion_plan_request = req
@@ -240,6 +307,9 @@ class Planner:
             print e
             return None
 
+        #print('*** Planning response: ***')
+        #print(res)
+
         if not res:
             return None
 
@@ -247,6 +317,7 @@ class Planner:
             print('Planner.plan(): Trajectory is too long: {}'.format( len(res.trajectory.joint_trajectory.points) ))
             return None
 
+        print('Found trajectory for joints: {}'.format(res.trajectory.joint_trajectory.joint_names))
         return res.trajectory.joint_trajectory
 
     def splitTrajectory(self, joint_trajectory, max_traj_len):
