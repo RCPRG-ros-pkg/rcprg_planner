@@ -42,24 +42,10 @@
 #include <moveit/planning_pipeline/planning_pipeline.h>
 #include <moveit_msgs/GetMotionPlan.h>
 #include <moveit_msgs/ApplyPlanningScene.h>
-//#include <moveit/robot_state/conversions.h>
-
-//#include <moveit/kinematic_constraints/utils.h>
-//#include <eigen_conversions/eigen_msg.h>
-//#include <eigen_conversions/eigen_kdl.h>
 
 #include <string>
-//#include <stdlib.h>
-//#include <stdio.h>
-
-//#include "Eigen/Dense"
-//#include "Eigen/LU"
 
 #include <collision_convex_model/collision_convex_model.h>
-//#include "kin_dyn_model/kin_model.h"
-//#include "planer_utils/random_uniform.h"
-//#include "planer_utils/utilities.h"
-//#include "planer_utils/double_joint_collision_checker.h"
 #include "std_srvs/Trigger.h"
 
 // plugin for robot interface
