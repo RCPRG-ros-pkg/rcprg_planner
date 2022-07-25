@@ -70,6 +70,7 @@ private:
 
     // ROS parameters
     std::string robot_interface_plugin_str_;
+    bool use_self_collisions_model_;
 
     // ROS pluginlib
     boost::shared_ptr<RobotInterface> robot_interface_;
@@ -108,13 +109,23 @@ public:
         nh_.getParam("/robot_description", robot_description_str_);
         nh_.getParam("/robot_description_semantic", robot_description_semantic_str_);
 
-        std::string xml_out;
-        self_collision::CollisionModel::convertSelfCollisionsInURDF(robot_description_str_, xml_out);
+        nh_.getParam("use_self_collisions_model", use_self_collisions_model_);
+
+        if (use_self_collisions_model_) {
+            std::cout << "rcprg_planner::Planner(): using modified collision model with"
+                << " self-collision geometries only" << std::endl;
+            std::string xml_out;
+            self_collision::CollisionModel::convertSelfCollisionsInURDF(robot_description_str_, xml_out);
+            robot_description_str_ = xml_out;
+        }
+        else {
+            std::cout << "rcprg_planner::Planner(): using original collision model" << std::endl;
+        }
 
         //
         // moveit
         //
-        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(xml_out, robot_description_semantic_str_) );
+        robot_model_loader::RobotModelLoader robot_model_loader( robot_model_loader::RobotModelLoader::Options(robot_description_str_, robot_description_semantic_str_) );
         robot_model_ = robot_model_loader.getModel();
 
         planning_scene_.reset( new planning_scene::PlanningScene(robot_model_) );
