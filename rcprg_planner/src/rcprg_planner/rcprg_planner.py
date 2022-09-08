@@ -120,33 +120,73 @@ class OctomapListener:
 def wrapAngle(angle):
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
-def keepUprightIk(T_B_E):
+def keepUprightIk(vec_E):
     epsilon = 0.001
-    v_B = PyKDL.Vector(0, 0, 1)
-    v_E = T_B_E.M.Inverse() * v_B
-    print('v_E: {}'.format(v_E))
-    if abs(v_E.x()) < epsilon and abs(v_E.y()) < epsilon:
+    assert isinstance(vec_E, PyKDL.Vector)
+
+    vec_E = copy.copy(vec_E)
+    vec_E.Normalize()
+    print('keepUprightIk(): vec_E: {}'.format(KDL2str(vec_E)))
+    if abs(vec_E.x()) < epsilon and abs(vec_E.y()) < epsilon:
         q0 = 0.0
     else:
-        q0 = wrapAngle( math.atan2(v_E.y(), v_E.x()) + math.pi/2 )
+        q0 = wrapAngle( math.atan2(vec_E.y(), vec_E.x()) + math.pi/2 )
 
     T_E_U1 = PyKDL.Frame( PyKDL.Rotation.RotZ(q0), PyKDL.Vector() )
-    T_B_U1 = T_B_E * T_E_U1
-    v_U1 = T_B_U1.M.Inverse() * v_B
-    print('v_U1: {}'.format(v_U1))
-    if abs(v_U1.y()) < epsilon and abs(v_U1.z()) < epsilon:
+    #T_B_U1 = T_B_E * T_E_U1
+    vec_U1 = T_E_U1.M.Inverse() * vec_E
+    print('vec_U1: {}'.format(KDL2str(vec_U1)))
+    if abs(vec_U1.y()) < epsilon and abs(vec_U1.z()) < epsilon:
         q1 = 0.0
     else:
-        q1 = wrapAngle( math.atan2(v_U1.z(), v_U1.y()) + math.pi/2 )
+        q1 = wrapAngle( math.atan2(vec_U1.z(), vec_U1.y()) + math.pi/2 )
 
     T_U1_U2 = PyKDL.Frame( PyKDL.Rotation.RotY(math.pi/2)*PyKDL.Rotation.RotZ(q1), PyKDL.Vector() )
-    T_B_U2 = T_B_U1 * T_U1_U2
-    return q0, q1, T_B_U2
+    T_E_U2 = T_E_U1 * T_U1_U2
+    # Check the results
+    vec_E_check = T_E_U2 * PyKDL.Vector(1,0,0)
+    if (vec_E - vec_E_check).Norm() > 0.001:
+        raise Exception('Check did not pass: {} != {}'.format(KDL2str(vec_E), KDL2str(vec_E_check)))
+    return q0, q1
 
-def printFrame(T):
-    q = T.M.GetQuaternion()
-    print('PyKDL.Frame(PyKDL.Rotation.Quaternion({}, {}, {}, {}), PyKDL.Vector({}, {}, {}))'.format(
-            q[0], q[1], q[2], q[3], T.p.x(), T.p.y(), T.p.z()))
+# def keepUprightIk(T_B_E):
+#     epsilon = 0.001
+#     v_B = PyKDL.Vector(0, 0, 1)
+#     v_E = T_B_E.M.Inverse() * v_B
+#     print('v_E: {}'.format(v_E))
+#     if abs(v_E.x()) < epsilon and abs(v_E.y()) < epsilon:
+#         q0 = 0.0
+#     else:
+#         q0 = wrapAngle( math.atan2(v_E.y(), v_E.x()) + math.pi/2 )
+
+#     T_E_U1 = PyKDL.Frame( PyKDL.Rotation.RotZ(q0), PyKDL.Vector() )
+#     T_B_U1 = T_B_E * T_E_U1
+#     v_U1 = T_B_U1.M.Inverse() * v_B
+#     print('v_U1: {}'.format(v_U1))
+#     if abs(v_U1.y()) < epsilon and abs(v_U1.z()) < epsilon:
+#         q1 = 0.0
+#     else:
+#         q1 = wrapAngle( math.atan2(v_U1.z(), v_U1.y()) + math.pi/2 )
+
+#     T_U1_U2 = PyKDL.Frame( PyKDL.Rotation.RotY(math.pi/2)*PyKDL.Rotation.RotZ(q1), PyKDL.Vector() )
+#     T_B_U2 = T_B_U1 * T_U1_U2
+#     return q0, q1, T_B_U2
+
+# def printFrame(T):
+#     q = T.M.GetQuaternion()
+#     print('PyKDL.Frame(PyKDL.Rotation.Quaternion({}, {}, {}, {}), PyKDL.Vector({}, {}, {}))'.format(
+#             q[0], q[1], q[2], q[3], T.p.x(), T.p.y(), T.p.z()))
+
+def KDL2str(x):
+    if isinstance(x, PyKDL.Vector):
+        return 'PyKDL.Vector({}, {}, {})'.format(x.x(), x.y(), x.z())
+    elif isinstance(x, PyKDL.Rotation):
+        q = x.GetQuaternion()
+        return 'PyKDL.Rotation.Quaternion({}, {}, {}, {})'.format(q[0], q[1], q[2], q[3])
+    elif isinstance(x, PyKDL.Frame):
+        return 'PyKDL.Frame({}, {})'.format(KDL2str(x.M), KDL2str(x.p))
+    # else:
+    raise Exception('Not supported argument: "{}"'.format(x))
 
 class Planner:
     """!
@@ -216,10 +256,10 @@ class Planner:
 
         if not keep_upright is None:
             current_time = rospy.Time.now()
-            for side_str, T_B_E in keep_upright.iteritems():
-                assert isinstance(T_B_E, PyKDL.Frame)
+            for side_str, vec_E in keep_upright.iteritems():
+                assert isinstance(vec_E, PyKDL.Vector)
 
-                q_ku0, q_ku1, T_B_U2 = keepUprightIk(T_B_E)
+                q_ku0, q_ku1 = keepUprightIk(vec_E)
                 #print('keep upright ik: {}, {}'.format(start_q['leftKeepUprightJoint0'], start_q['leftKeepUprightJoint1']))
 
                 q_ku0_name = '{}KeepUprightJoint0'.format(side_str)
@@ -241,39 +281,34 @@ class Planner:
 
                 dbg_str = '{'
                 for q_idx, joint_name in enumerate(req.start_state.joint_state.name):
-                    dbg_str += '\'{}\':{},'.format(joint_name, req.start_state.joint_state.position[q_idx])
+                    dbg_str += '\'{}\':{},'.format(joint_name,
+                                                    req.start_state.joint_state.position[q_idx])
                 dbg_str += '}'
-                print('start_q: {}'.format(dbg_str))
-                print('T_B_E:')
-                printFrame(T_B_E)
-                print('T_B_U2:')
-                printFrame(T_B_U2)
+                print('Planner.plan(): start_q: {}'.format(dbg_str))
+                print('Planner.plan(): upright {} vec_E: {}'.format(side_str, KDL2str(vec_E)))
+                #print('Planner.plan(): T_B_U2: {}'.format(KDL2str(T_B_U2)))
 
                 # This message contains the definition of an orientation constraint.
                 ori_constr = OrientationConstraint()
                 ori_constr.header.frame_id = 'world'
 
                 # The robot link this constraint refers to
-                #ori_constr.link_name = '{}_arm_7_link'.format( side_str )
                 ori_constr.link_name = '{}_keepUprightLink2'.format( side_str )
 
-                qx, qy, qz, qw = T_B_U2.M.GetQuaternion()
                 # The desired orientation of the robot link specified as a quaternion
+                qx, qy, qz, qw = PyKDL.Rotation.RotY(math.radians(-90.0)).GetQuaternion()
                 ori_constr.orientation.x = qx
                 ori_constr.orientation.y = qy
                 ori_constr.orientation.z = qz
                 ori_constr.orientation.w = qw
 
                 # Tolerance on the three vector components of the orientation error (optional)
-                #ori_constr.absolute_x_axis_tolerance = math.radians(30.0)
-                #ori_constr.absolute_y_axis_tolerance = math.radians(30.0)
-                #ori_constr.absolute_z_axis_tolerance = math.radians(200.0)
-
                 ori_constr.absolute_x_axis_tolerance = math.radians(200.0)
                 ori_constr.absolute_y_axis_tolerance = math.radians(40.0)
                 ori_constr.absolute_z_axis_tolerance = math.radians(40.0)
 
-                # A weighting factor for this constraint (denotes relative importance to other constraints. Closer to zero means less important)
+                # A weighting factor for this constraint (denotes relative importance to other
+                # constraints. Closer to zero means less important)
                 ori_constr.weight = 1.0
 
                 req.path_constraints.orientation_constraints.append( ori_constr )
@@ -283,6 +318,7 @@ class Planner:
                 ori_constr_goal.absolute_y_axis_tolerance = math.radians(30.0)
                 ori_constr_goal.absolute_z_axis_tolerance = math.radians(30.0)
 
+                # Add orientation constraint for upright pose to all goals
                 for goal_constr in req.goal_constraints:
                     goal_constr.orientation_constraints.append(ori_constr_goal)
 
@@ -313,8 +349,10 @@ class Planner:
         if not res:
             return None
 
-        if not self._max_traj_len is None and len(res.trajectory.joint_trajectory.points) > self._max_traj_len:
-            print('Planner.plan(): Trajectory is too long: {}'.format( len(res.trajectory.joint_trajectory.points) ))
+        if not self._max_traj_len is None and\
+                                len(res.trajectory.joint_trajectory.points) > self._max_traj_len:
+            print('Planner.plan(): Trajectory is too long: {}'.format(
+                                                    len(res.trajectory.joint_trajectory.points) ))
             return None
 
         print('Found trajectory for joints: {}'.format(res.trajectory.joint_trajectory.joint_names))
