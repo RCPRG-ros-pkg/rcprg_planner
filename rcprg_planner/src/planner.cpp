@@ -130,7 +130,7 @@ public:
 
         planning_scene_.reset( new planning_scene::PlanningScene(robot_model_) );
 
-        planning_scene_->setStateFeasibilityPredicate( boost::bind(&RobotInterface::isStateValid, robot_interface_.get(), _1, _2) );
+        planning_scene_->setStateFeasibilityPredicate( boost::bind(&RobotInterface::isStateValidAndSafe, robot_interface_.get(), _1, _2) );
 
         planning_pipeline_.reset( new planning_pipeline::PlanningPipeline(robot_model_, nh_, "planning_plugin", "request_adapters") );
 

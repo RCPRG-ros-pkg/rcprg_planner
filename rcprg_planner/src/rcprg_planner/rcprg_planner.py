@@ -234,6 +234,7 @@ class Planner:
             req.start_state.joint_state.position.append( q_start[joint_name] )
 
         if attached_collision_objects:
+            print('Planner.plan(): there are some objects attached to grippers')
             req.start_state.attached_collision_objects = attached_collision_objects
 
         req.start_state.is_diff = is_diff
@@ -357,45 +358,6 @@ class Planner:
 
         print('Found trajectory for joints: {}'.format(res.trajectory.joint_trajectory.joint_names))
         return res.trajectory.joint_trajectory
-
-    def splitTrajectory(self, joint_trajectory, max_traj_len):
-        """!
-        Split a long trajectory into a number of shorter trajectories.
-
-        @param joint_trajectory         trajectory_msgs.msg.JointTrajectory: A joint trajectory to be splitted.
-        @param max_traj_len             int: Maximum number of nodes in the result trajectory.
-        @return Returns list of trajectory_msgs.msg.JointTrajectory -- the input trajectory split
-        into a number of trajectories of length not greater than max_traj_len.
-        """
-        assert isinstance(joint_trajectory, JointTrajectory)
-        if len(joint_trajectory.points) > max_traj_len:
-            result = []
-            #for idx in range(0, len(traj.trajectory.joint_trajectory.points), max_traj_len):
-            idx = 0
-            new_traj = JointTrajectory()
-            new_traj.header = joint_trajectory.header
-            new_traj.joint_names = joint_trajectory.joint_names
-            time_base = rospy.Duration(0.0)
-            for idx in range(len(joint_trajectory.points)):
-                point = copy.copy( joint_trajectory.points[idx] )
-                point.time_from_start = point.time_from_start - time_base
-                new_traj.points.append( point )
-                if len(new_traj.points) >= max_traj_len:
-                    result.append( new_traj )
-                    new_traj = JointTrajectory()
-                    new_traj.header = joint_trajectory.header
-                    new_traj.joint_names = joint_trajectory.joint_names
-                    point = copy.copy( joint_trajectory.points[idx] )
-                    time_base = point.time_from_start - rospy.Duration(0.5)
-                    point.time_from_start = point.time_from_start - time_base
-                    new_traj.points.append( point )
-
-            if len(new_traj.points) > 0:
-                result.append( new_traj )
-
-            return result
-        # else
-        return [joint_trajectory]
 
     def processWorld(self, octomap):
         """!

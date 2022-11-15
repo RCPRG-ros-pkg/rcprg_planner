@@ -44,6 +44,7 @@ namespace rcprg_planner {
     class RobotInterface {
     public:
         virtual bool isStateValid(const robot_state::RobotState& ss, bool verbose) = 0;
+        virtual bool isStateValidAndSafe(const robot_state::RobotState& ss, bool verbose) = 0;
     };
 }
 
