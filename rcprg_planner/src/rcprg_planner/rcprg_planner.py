@@ -359,11 +359,12 @@ class Planner:
         print('Found trajectory for joints: {}'.format(res.trajectory.joint_trajectory.joint_names))
         return res.trajectory.joint_trajectory
 
-    def processWorld(self, octomap):
+    def processWorld(self, octomap, collision_objects=None):
         """!
         Updates occupancy map of the planner.
 
         @param octomap  octomap_msgs.msg.Octomap: Occupancy map.
+        @param collision_objects  list of CollisionObject: objects in the environment
 
         @return Returns True if the octomap was succesfully loaded, False otherwise.
         """
@@ -378,8 +379,13 @@ class Planner:
         #TODO: req.scene.object_colors
         #TODO: req.scene.world.collision_objects
 
-        req.scene.world.octomap.header.frame_id = "world"
-        req.scene.world.octomap.octomap = octomap
+        if collision_objects is None:
+            collision_objects = []
+
+        if not octomap is None:
+            req.scene.world.octomap.header.frame_id = "world"
+            req.scene.world.octomap.octomap = octomap
+        req.scene.world.collision_objects = collision_objects
         req.scene.is_diff = False
         res = self.processWorld_service(req)
         if not res.success:
