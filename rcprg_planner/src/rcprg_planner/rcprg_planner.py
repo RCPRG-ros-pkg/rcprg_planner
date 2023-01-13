@@ -392,7 +392,7 @@ class Planner:
             return False
         return True
 
-    def __init__(self, max_traj_len):
+    def __init__(self, max_traj_len=None):
         """!
         Initialization of Python planner interface.
 
