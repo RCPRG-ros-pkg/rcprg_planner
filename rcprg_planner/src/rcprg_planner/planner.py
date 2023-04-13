@@ -257,7 +257,7 @@ class Planner:
 
         if not keep_upright is None:
             current_time = rospy.Time.now()
-            for side_str, vec_E in keep_upright.iteritems():
+            for side_str, vec_E in keep_upright.items():
                 assert isinstance(vec_E, PyKDL.Vector)
 
                 q_ku0, q_ku1 = keepUprightIk(vec_E)
@@ -340,8 +340,8 @@ class Planner:
         try:
             res = self.plan_service( request ).motion_plan_response
         except rospy.service.ServiceException as e:
-            print "Planner.plan(): could not plan:"
-            print e
+            print("Planner.plan(): could not plan:")
+            print(e)
             return None
 
         #print('*** Planning response: ***')
